@@ -1,0 +1,166 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens. Status colors are NOT here: they come from GET /meta and only ever mean a
+ * status. The accent marks the warning (area, alert pill, main button). Keep the JS copies in
+ * src/lib/theme.ts in step with --accent.
+ */
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0a0c10;
+  --panel: #111419;
+  --raised: #191d24;
+  --line: #242a33;
+  --ink: #eef0f3;
+  --muted: #a3abb7;
+  --faint: #6d7684;
+  --accent: #a78bfa;
+  --accent-ink: #150b2e;
+  --map-bg: #0e0f11;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f3f4f6;
+  --panel: #ffffff;
+  --raised: #f2f3f5;
+  --line: #e2e5ea;
+  --ink: #111318;
+  --muted: #535c6a;
+  --faint: #8a93a1;
+  --accent: #7c3aed;
+  --accent-ink: #ffffff;
+  --map-bg: #e8eaed;
+}
+
+/* Short screens (a 720p projector): tighter counters so the feed keeps its room. */
+@custom-variant short (@media (max-height: 820px));
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --font-sans: 'Inter', ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'cv11', 'ss01';
+}
+
+/* Leaflet, themed */
+.leaflet-container {
+  background: var(--map-bg);
+  font-family: var(--font-sans);
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+}
+.leaflet-popup-content-wrapper {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.leaflet-popup-content {
+  margin: 14px 18px 14px 16px;
+  line-height: 1.35;
+}
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--faint);
+  top: 4px;
+  right: 4px;
+}
+.leaflet-container a.leaflet-popup-close-button:hover {
+  color: var(--ink);
+}
+.leaflet-control-attribution.leaflet-control {
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
+  color: var(--faint);
+  font-size: 11px;
+}
+.leaflet-control-attribution a {
+  color: var(--muted);
+}
+.leaflet-bar.leaflet-control {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
+}
+.leaflet-bar a,
+.leaflet-bar a:hover {
+  background: var(--panel);
+  color: var(--ink);
+  border-bottom-color: var(--line);
+  width: 34px;
+  height: 34px;
+  line-height: 34px;
+}
+.leaflet-bar a:hover {
+  background: var(--raised);
+}
+
+/* Motion */
+@keyframes rc-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  80%,
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+.rc-ping {
+  animation: rc-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes rc-breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+.rc-breathe {
+  animation: rc-breathe 1.6s ease-in-out infinite;
+}
+
+/* New feed line: a brief edge flash. It never hides the text, even if animations are paused. */
+@keyframes rc-enter {
+  from {
+    box-shadow: inset 3px 0 0 var(--muted);
+  }
+  to {
+    box-shadow: inset 3px 0 0 transparent;
+  }
+}
+.rc-enter {
+  animation: rc-enter 1.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-ping,
+  .rc-breathe,
+  .rc-enter {
+    animation: none;
+  }
+}

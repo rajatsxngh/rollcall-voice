@@ -15,7 +15,7 @@ How we build the [PRD](docs/PRD.md): 11 milestones (M0 to M10) plus an optional 
 
 - [ ] M0 Foundation and shared contracts
 - [ ] M1 First real call (go/no-go gate)
-- [ ] M2 Fake city and risk ranking
+- [x] M2 Fake city and risk ranking
 - [ ] M3 Response engine (code only)
 - [ ] M4 Live map dashboard v1
 - [ ] M5 Nemotron manager agent
@@ -133,7 +133,7 @@ Build:
 - `scripts/vapi_setup.py`, which creates or updates the Vapi assistant from code (prompt, voice, transcriber, LLM URL, server URL) so its config lives in git.
 - `scripts/call_me.py <phone> <name>` to place an outbound call.
 - Try the voice candidates from NVIDIA's catalog (`nemotron-3.5-lightning-30b-a3b`, `nemotron-nano-3-30b-a3b`, and the small `nemotron-3.5-bolt-e4b`) and keep the fastest one that still calls tools correctly.
-- Check the trial account's limits: which numbers it can call and how many outbound calls it allows.
+- The phone number: free Vapi numbers can't place outbound calls (confirmed in Vapi's docs), so import a Twilio, Vonage or Telnyx number into Vapi and use its id. A Twilio trial number can only call verified numbers.
 
 Done when:
 
@@ -141,6 +141,8 @@ Done when:
 - [ ] `record_need` round-trips to the backend during the call, so tool calling through Vapi and Nemotron is proven.
 - [ ] Replies come within about 1.5 s, and time to first token is logged per turn.
 - [ ] The gate decision is written in the Decision log.
+
+*Status: the code is written and passes mocked tests (`app/agent/voice_spec.py`, `app/agent/voice_tools.py`, `app/routers/vapi.py`, `scripts/vapi_setup.py`, `scripts/call_me.py`). The live call waits on keys, a tunnel and an imported phone number. Things to check on the first live call: which path Vapi actually requests, that tool calls come back as structured `tool_calls` and are not read aloud, that the summary survives the "goodbye" hang-up, and that `household_id` arrives in the call metadata.*
 
 **If the gate fails** (or, per the PRD, voice still isn't solid by about 10 pm), switch to text check-ins: build an SMS check-in channel that runs the same spec over Twilio SMS and use it in place of Vapi in M6. Everything else stays the same.
 
@@ -164,10 +166,12 @@ Build:
 
 Done when:
 
-- [ ] Seeding twice with the same seed gives identical data.
-- [ ] The inspect script shows the roughly 5/20/75 urgency mix, 30 traps and the affected count.
-- [ ] Risk ranking puts far more true P1+P2 homes in the first wave than list order does. If it doesn't, tune the generator now.
-- [ ] Tests for scoring and point-in-polygon pass.
+- [x] Seeding twice with the same seed gives identical data.
+- [x] The inspect script shows the roughly 5/20/75 urgency mix, 30 traps and the affected count. *(Seed 42: 1,365 of 2,000 inside; P1+P2 5.8%, P3 19.4%.)*
+- [x] Risk ranking puts far more true P1+P2 homes in the first wave than list order does. If it doesn't, tune the generator now. *(First 10% of calls: 55% of urgent homes vs 9.5%.)*
+- [x] Tests for scoring and point-in-polygon pass.
+
+Also built for M4: `GET /state` and a temporary stand-in engine behind `POST /alerts/demo` and `POST /reset` (`app/stub_engine.py`, replaced in M3), per [docs/API.md](docs/API.md).
 
 ## M3: Response engine (code only, no AI yet)
 
@@ -184,6 +188,7 @@ Build:
 - Rule triage from urgency to actions: P1 handoff, P2 crew, P3 crew or adjuster plus a claim, P4 safe. This becomes the agent's fallback.
 - API: `POST /alerts/demo`, `POST /reset`, and `GET /state` (the dashboard's snapshot).
 - Two run modes: live (real clock, `live.db`) and sim (simulated clock, its own run file).
+- Replace the M2 stand-in (`app/stub_engine.py`) behind the same routes and events. Fix what the stand-in gets wrong: event times follow the run's clock (the stand-in stamps real time, so "+N min since the alert" is off at 60×), and after a backend restart no household is left stuck in "calling".
 
 Done when:
 
@@ -206,9 +211,11 @@ Build:
 
 Done when:
 
-- [ ] Clicking "Tornado warning" changes dot colors and raises the counters live, staying smooth with 2,000 dots.
-- [ ] Reloading the page mid-run shows the same state.
-- [ ] A teammate who hasn't seen the code can narrate the run from the screen alone.
+- [x] Clicking "Tornado warning" changes dot colors and raises the counters live, staying smooth with 2,000 dots. *(Checked in the browser against the real backend and the stand-in engine at 60×.)*
+- [x] Reloading the page mid-run shows the same state. *(Counters matched the backend's `/state` exactly after a reload: 1,365 called, 1,156 reached, 103 urgent, 391 help sent.)*
+- [ ] A teammate who hasn't seen the code can narrate the run from the screen alone. *(A human check: show it to someone.)*
+
+*Notes: built with React, Vite, TypeScript, react-leaflet and Tailwind in `dashboard/`. The basemap is Stadia's (CARTO's free tiles now need a key); it works from localhost without a key, so a hosted copy would need one. The backend's default port is 8100.*
 
 ## M5: Nemotron manager agent
 

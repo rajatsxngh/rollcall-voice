@@ -553,7 +553,11 @@ class ChatStream:
                 retry = resp.status_code in RETRYABLE_STATUS
             except _StreamError as exc:
                 problem, retry = f"error in stream: {exc}", False
-            except (httpx.HTTPError, TimeoutError, StopAsyncIteration) as exc:
+            except TimeoutError:
+                # Nothing arrived in time. Go straight to the next provider: on a phone call, a
+                # second wait on the same slow provider costs the caller seconds of silence.
+                problem, retry = f"no first chunk within {self._first_chunk_timeout:g} s", False
+            except (httpx.HTTPError, StopAsyncIteration) as exc:
                 problem = f"{type(exc).__name__}: {exc}"[:200]
             if resp is not None:
                 await resp.aclose()

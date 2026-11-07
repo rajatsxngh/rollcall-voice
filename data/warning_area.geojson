@@ -1,0 +1,18 @@
+{
+  "type": "Feature",
+  "properties": {
+    "title": "Tornado Warning",
+    "source": "saved",
+    "description": "Made-up warning polygon along a southwest-to-northeast storm track through Richardson, for the demo. Not a real NWS product."
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[
+      [-96.812, 32.922],
+      [-96.647, 33.042],
+      [-96.603, 32.993],
+      [-96.768, 32.873],
+      [-96.812, 32.922]
+    ]]
+  }
+}

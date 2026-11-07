@@ -7,6 +7,7 @@ from app.db import iso_utc, utcnow
 from app.events import EVENT_DOCS
 from app.models import (
     COVERED,
+    HELP_ACTIONS,
     REACHED,
     STATUS_STYLE,
     URGENCY_LABEL,
@@ -55,4 +56,5 @@ def meta(request: Request) -> dict[str, Any]:
         "event_types": [{"value": t.value, "doc": doc} for t, doc in EVENT_DOCS.items()],
         "resource_types": [r.value for r in ResourceType],
         "action_types": [a.value for a in ActionType],
+        "help_action_types": sorted(a.value for a in HELP_ACTIONS),
     }

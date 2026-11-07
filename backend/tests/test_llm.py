@@ -1,4 +1,5 @@
 """LLM client tests against a fake transport: no network, no keys."""
+import asyncio
 import json
 
 import httpx
@@ -172,6 +173,22 @@ async def test_stream_falls_back_before_the_first_chunk(tmp_path):
     await llm.aclose()
     assert (text, stream.result.provider) == ("Hi", "openrouter")
     assert fake.hosts == [NVIDIA, NVIDIA, OPENROUTER]
+
+
+async def test_slow_first_chunk_falls_back_without_a_second_wait(tmp_path):
+    async def slow_body():
+        await asyncio.sleep(1)
+        yield b'data: {"choices": [{"index": 0, "delta": {"content": "late"}}]}\n\n'
+
+    llm, fake = make(tmp_path, {
+        NVIDIA: lambda r: httpx.Response(200, content=slow_body(), headers={"content-type": "text/event-stream"}),
+        OPENROUTER: lambda r: sse(delta(content="Hi")),
+    })
+    async with llm.stream("voice", HELLO, first_chunk_timeout=0.1) as stream:
+        text = "".join([d.text async for d in stream])
+    await llm.aclose()
+    assert (text, stream.result.provider) == ("Hi", "openrouter")
+    assert fake.hosts == [NVIDIA, OPENROUTER]
 
 
 async def test_stream_merges_tool_call_pieces(tmp_path):

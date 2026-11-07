@@ -1,0 +1,13 @@
+# Demo households: real phones of people who agreed to be called (teammates, the handset you
+# give the judge). Copy this file to data/demo_households.yaml, which is gitignored, and fill it in.
+# Trial phone accounts can usually only call verified numbers. Then reseed:
+#   cd backend; uv run python -m scripts.seed
+# These households are marked live=true, placed inside the warning area with high risk, and get no
+# hidden truth (they're real people, so they're left out of the simulated test's scores).
+- name: Maria
+  phone: "+12145550100"        # E.164 format
+  address: "1412 Oak St, Richardson, TX"
+  age: 81
+  lives_alone: true
+  medical_device: oxygen concentrator
+  has_car: false

@@ -9,7 +9,8 @@ from app.config import Settings, get_settings
 from app.db import Database
 from app.events import EventBus
 from app.llm import LLMClient
-from app.routers import events, system
+from app.routers import events, run, state, system, vapi
+from app.routers.run import stop_run
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -26,6 +27,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            await stop_run(app.state)
             await app.state.llm.aclose()
             db.dispose()
 
@@ -36,6 +38,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.include_router(system.router)
     app.include_router(events.router)
+    app.include_router(state.router)
+    app.include_router(run.router)
+    app.include_router(vapi.router)
     return app
 
 

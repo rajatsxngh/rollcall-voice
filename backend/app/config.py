@@ -38,8 +38,14 @@ class Settings(BaseSettings):
 
     # Phone and texts (M1, M6).
     vapi_api_key: str = ""
-    vapi_phone_number_id: str = ""
-    vapi_assistant_id: str = ""
+    vapi_phone_number_id: str = ""  # an imported Twilio/Vonage/Telnyx number (free Vapi numbers can't dial out)
+    vapi_assistant_id: str = ""  # printed by scripts.vapi_setup
+    vapi_webhook_secret: str = ""  # if set, /vapi/* requires it in the X-Vapi-Secret header
+    vapi_voice_provider: str = "vapi"  # scripts.vapi_setup: the assistant's voice
+    vapi_voice_id: str = "Elliot"
+    vapi_transcriber_provider: str = "deepgram"
+    vapi_transcriber_model: str = "nova-3"
+    vapi_max_call_s: int = 180  # Vapi hangs up after this many seconds
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_from_number: str = ""

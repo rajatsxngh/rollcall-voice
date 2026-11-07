@@ -1,4 +1,4 @@
-"""Event stream tools. The backend must be running (uv run uvicorn app.main:app).
+"""Event stream tools. The backend must be running (uv run uvicorn app.main:app --port 8100).
 
     uv run python -m scripts.events_cli check              # emit -> WebSocket -> GET /events
     uv run python -m scripts.events_cli watch --since 0    # print events as they arrive
@@ -72,7 +72,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--base", default="http://127.0.0.1:8000", help="backend URL")
+    parser.add_argument("--base", default="http://127.0.0.1:8100", help="backend URL")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("check", help="round-trip test (M0 done-when)")
     watch_cmd = sub.add_parser("watch", help="print events as they arrive")

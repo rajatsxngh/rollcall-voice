@@ -49,7 +49,7 @@ EVENT_DOCS: dict[EventType, str] = {
     EventType.ALERT_RECEIVED: "A warning started the response. payload: source, title, polygon",
     EventType.PLAN_CREATED: "The call plan was made or changed. payload: summary, waves, affected",
     EventType.CALL_STARTED: "A call or simulated call began. payload: call_id, channel, attempt",
-    EventType.CALL_TRANSCRIPT: "One line of a live call. payload: call_id, role, text",
+    EventType.CALL_TRANSCRIPT: "One line of a live call. payload: call_id, role, line",
     EventType.CALL_ENDED: "A call finished. payload: call_id, outcome, summary",
     EventType.NEED_RECORDED: "The agent saved a need. payload: category, details, urgency",
     EventType.HOUSEHOLD_STATUS: "A household's status changed. payload: status, previous",

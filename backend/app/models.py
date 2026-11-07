@@ -144,6 +144,17 @@ REACHED = frozenset({Status.SAFE, Status.NEEDS_HELP, Status.URGENT, Status.EMERG
 COVERED = REACHED | {Status.ESCALATED}
 NOT_REACHED = frozenset({Status.NOT_CALLED, Status.CALLING, Status.NO_ANSWER})
 
+# Actions that count toward the dashboard's "help sent" counter (texts, claims and follow-ups don't).
+HELP_ACTIONS = frozenset({
+    ActionType.DISPATCH_CREW,
+    ActionType.RESERVE_SHELTER_BED,
+    ActionType.SCHEDULE_ADJUSTER,
+    ActionType.DELIVER_GENERATOR,
+    ActionType.HOTEL_VOUCHER,
+    ActionType.IN_PERSON_CHECK,
+    ActionType.TRANSFER_TO_HUMAN,
+})
+
 URGENCY_STATUS = {
     Urgency.P1: Status.EMERGENCY,
     Urgency.P2: Status.URGENT,
