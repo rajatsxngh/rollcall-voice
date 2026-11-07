@@ -26,7 +26,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.db = db
         app.state.bus = bus
         app.state.llm = LLMClient(settings)
-        app.state.live_run = LiveRun(db, bus, settings)
+        app.state.live_run = LiveRun(db, bus, settings, llm=app.state.llm)
         try:
             yield
         finally:

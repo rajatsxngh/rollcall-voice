@@ -43,7 +43,7 @@ Status `style` values: `solid`, `pulse` (call in progress), `hollow` (no answer 
 ```json
 {
   "time": "2026-11-07T23:01:02.123Z",
-  "run": {"active": true, "engine": "rules", "policy": "risk_ranked", "lines": 100, "speed": 60.0,
+  "run": {"active": true, "engine": "nemotron", "policy": "risk_ranked", "lines": 100, "speed": 60.0,
           "started_at": "2026-11-07T23:00:00.000Z", "finished_at": null, "clock": "2026-11-07T23:01:02.123Z"},
   "last_event_id": 1234,
   "warning_area": {"type": "Feature", "properties": {"title": "Tornado Warning", "issued_at": "2026-11-07T23:00:00.000Z", "event_id": 1201}, "geometry": {"type": "Polygon", "coordinates": [[[-96.8, 32.9], "..."]]}},
@@ -77,7 +77,7 @@ Events the dashboard uses:
 | Type | `household_id` | Payload |
 |---|---|---|
 | `alert.received` | null | `title`, `source`, `polygon` (GeoJSON Polygon geometry), `affected_ids` (list of household ids), `text` |
-| `plan.created` | null | `summary`, `affected`, `waves` (e.g. `{"1": 312, "2": 540, "3": 648}`), `text` |
+| `plan.created` | null | `summary`, `affected`, `waves` (e.g. `{"1": 312, "2": 540, "3": 648}`), `policy`, `lines`, `text`. With Nemotron, a first one without `text` starts the run and a second (`source: "nemotron"`) carries its one-line plan; use the latest |
 | `call.started` | set | `call_id`, `channel`, `attempt`; phone calls add `status` (Vapi's first status) |
 | `call.transcript` | set | `call_id`, `role` (`agent` or `resident`), `line` (the words; deliberately not `text`, so transcripts stay out of the feed) |
 | `call.ended` | set | `call_id`, `outcome`, `summary`; phone calls add `ended_reason`, `duration_s` |
@@ -86,7 +86,7 @@ Events the dashboard uses:
 | `action.created` | set | `action_id`, `type`, `status`, `resource_id`, `reason`, `eta_minutes` (booked help), `text` (not for claims, follow-ups) |
 | `action.updated` | set | `action_id`, `status` (e.g. `done` when a crew finishes) |
 | `approval.requested` | set | `action_id`, `type`, `cost`, `reason`, `text` |
-| `agent.note` | optional | `text`, optional `reason`, optional `tool` (the in-call tool that wrote it) |
+| `agent.note` | optional | `text`, optional `reason` (`replan`, `resources_busy`, `model_status`, `no_model`, `restart`), optional `change` (a re-plan), optional `tool` (the in-call tool that wrote it) |
 
 For phone calls, `call_id` is the phone platform's call id (a string). Rows in the `calls` table for phone calls start in M6.
 | `status.update` | null | `text`, `counts` |

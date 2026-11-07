@@ -57,6 +57,7 @@ def test_demo_run_then_reset(city_client):
     assert all("text" in e["payload"] for e in events
                if e["type"] == "action.created" and e["payload"]["type"] not in bookkeeping)
     assert state["run"]["engine"] == "rules" and not state["run"]["active"]
+    assert any(e["type"] == "agent.note" and "No model key" in e["payload"]["text"] for e in events)
 
     assert city_client.post("/reset").json()["reset"]
     after = city_client.get("/state").json()

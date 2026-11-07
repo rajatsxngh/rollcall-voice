@@ -136,6 +136,10 @@ class Engine:
         self.booker = Booker([])
         self._status_timer: Timer | None = None
         self._busy_noted: set[ResourceType] = set()
+        self.rank: dict[int, int] = {}  # each household's place in the original call order
+        self.help_swaps: dict[ActionType, ActionType] = {}  # set by re-plans, applied at booking
+        self._last_replan: dict[str, datetime] = {}
+        self.replans = 0
 
     @property
     def finished(self) -> bool:
@@ -170,18 +174,97 @@ class Engine:
             summary = f"{waves[1]} high-risk homes first, in 3 waves."
         else:
             summary = f"All {len(to_call):,} homes in list order."
-        self._emit(EventType.PLAN_CREATED, {
-            "summary": summary, "affected": len(affected), "waves": {str(w): waves[w] for w in (1, 2, 3)},
-            "policy": self.policy, "lines": self.lines,
-            "text": f"Plan: {summary} Calling up to {self.lines} homes at a time.",
-        })
+        plan = {"summary": summary, "affected": len(affected), "waves": {str(w): waves[w] for w in (1, 2, 3)},
+                "policy": self.policy, "lines": self.lines}
+        if hasattr(self.triage, "plan_summary"):
+            # Calls start now; Nemotron's one-line plan follows as soon as it's written.
+            self._emit(EventType.PLAN_CREATED, plan)
+            facts = self._plan_facts(affected, waves)
+            self.clock.call_later(0, lambda: self._model_plan(plan, facts))
+        else:
+            self._emit(EventType.PLAN_CREATED, {**plan, "text": f"Plan: {summary} Calling up to {self.lines} homes at a time."})
         skipped = len(ordered) - len(to_call)
         if skipped:
             self._emit(EventType.AGENT_NOTE, {"text": f"{skipped} live demo home(s) wait for a real phone line (M6)."})
         for rank, h in enumerate(to_call):
+            self.rank[h.id] = rank
             self.queue.push(h.id, (rank,))
         self._status_timer = self.clock.call_later(STATUS_EVERY_S, self._status_tick)
         self._fill()
+
+    def _plan_facts(self, affected: list[Household], waves: Counter) -> dict[str, Any]:
+        return {
+            "homes_in_warning_area": len(affected),
+            "waves_by_risk": {"high": waves[1], "medium": waves[2], "low": waves[3]},
+            "call_order": self.policy.value, "phone_lines": self.lines,
+            "with_powered_medical_device": sum(1 for h in affected if h.medical_device),
+            "age_75_plus_living_alone": sum(1 for h in affected if h.age >= 75 and h.lives_alone),
+            "crews": len(self.booker.pool(ResourceType.CREW)),
+            "shelter_beds": sum(r.capacity for r in self.booker.pool(ResourceType.SHELTER)),
+        }
+
+    async def _model_plan(self, plan: dict[str, Any], facts: dict[str, Any]) -> None:
+        line = await self.triage.plan_summary(facts)
+        if line:
+            self._emit(EventType.PLAN_CREATED, {**plan, "summary": line, "source": "nemotron", "text": f"Plan from Nemotron: {line}"})
+        else:
+            self._emit(EventType.PLAN_CREATED, {**plan, "text": f"Plan: {plan['summary']} Calling up to {self.lines} homes at a time."})
+
+    # --- re-planning (M5) ---------------------------------------------------------------------
+
+    def _trigger(self, kind: str, detail: dict[str, Any], every_s: float = 600) -> None:
+        """Something changed. If the brain can re-plan and hasn't for this reason lately, ask it."""
+        if not hasattr(self.triage, "replan") or self.finished:
+            return
+        now = self.clock.now()
+        last = self._last_replan.get(kind)
+        if last is not None and (now - last).total_seconds() < every_s:
+            return
+        self._last_replan[kind] = now
+        self.clock.call_later(0, lambda: self._replan(kind, detail))
+
+    def replan_context(self, detail: dict[str, Any]) -> dict[str, Any]:
+        now = self.clock.now()
+        crews = self.booker.pool(ResourceType.CREW)
+        shelters = self.booker.pool(ResourceType.SHELTER)
+        nxt = self.booker.next_free(ResourceType.CREW, now)
+        return {
+            **detail, "counts": self.counts(), "waiting_to_be_called": len(self.queue), "phone_lines": self.lines,
+            "crews_busy": sum(1 for r in crews if (r.free_at or now) > now), "crews_total": len(crews),
+            "next_crew_free_in_min": round((nxt - now).total_seconds() / 60) if nxt else None,
+            "shelter_beds_used": sum(r.used for r in shelters), "shelter_beds_total": sum(r.capacity for r in shelters),
+            "help_switches_in_effect": {k.value: v.value for k, v in self.help_swaps.items()},
+        }
+
+    async def _replan(self, kind: str, detail: dict[str, Any]) -> None:
+        change = await self.triage.replan(kind, self.replan_context(detail))
+        if change is None or self.finished:
+            return
+        self.apply_change(change)
+
+    def apply_change(self, change: dict[str, Any]) -> None:
+        """Apply one validated change from the re-plan menu and say what changed."""
+        kind, why = change["change"], change.get("why", "")
+        text = None
+        if kind == "raise_priority_near":
+            moved = 0
+            for hid, h in self.households.items():
+                if hid in self.queue and _km(h.lat, h.lng, change["lat"], change["lng"]) <= change["radius_km"]:
+                    self.queue.push(hid, (-1, self.rank.get(hid, 0)))
+                    moved += 1
+            text = f"Re-plan: calling {moved} homes within {change['radius_km']:g} km sooner. {why}"
+        elif kind == "switch_help":
+            self.help_swaps[ActionType(change["from"])] = ActionType(change["to"])
+            text = f"Re-plan: using {change['to'].replace('_', ' ')} instead of {change['from'].replace('_', ' ')}. {why}"
+        elif kind == "change_lines":
+            old, self.lines = self.lines, change["lines"]
+            text = f"Re-plan: {self.lines} calls at once instead of {old}. {why}"
+            self._fill()
+        elif kind == "flag_coordinator":
+            text = f"For the coordinator: {change['note']}. {why}"
+        if text:
+            self.replans += 1
+            self._emit(EventType.AGENT_NOTE, {"text": text.strip(), "reason": "replan", "change": change})
 
     def _fill(self) -> None:
         while self.active < self.lines and len(self.queue):
@@ -210,17 +293,20 @@ class Engine:
         if self.on_finish:
             self.on_finish(self)
 
-    def _status_tick(self) -> None:
+    async def _status_tick(self) -> None:
         if self.finished:
             return
-        c = self.counts()
-        self._emit(EventType.STATUS_UPDATE, {
-            "counts": c,
-            "text": (f"Status: {c['called']:,} of {c['affected']:,} called, {c['reached']:,} reached, "
-                     f"{c['urgent']} urgent, {c['help_sent']} with help on the way, "
-                     f"{c['not_reached']:,} not reached yet."),
-        })
         self._status_timer = self.clock.call_later(STATUS_EVERY_S, self._status_tick)
+        c = self.counts()
+        text = (f"Status: {c['called']:,} of {c['affected']:,} called, {c['reached']:,} reached, "
+                f"{c['urgent']} urgent, {c['help_sent']} with help on the way, {c['not_reached']:,} not reached yet.")
+        if hasattr(self.triage, "status_text"):
+            context = self.replan_context({})
+            written = await self.triage.status_text(c, {k: v for k, v in context.items() if k != "counts"})
+            if written:
+                text = f"Status: {written}" if not written.lower().startswith("status") else written
+        if not self.finished:
+            self._emit(EventType.STATUS_UPDATE, {"counts": c, "text": text})
 
     # --- calls ----------------------------------------------------------------------------
 
@@ -262,12 +348,19 @@ class Engine:
         self._set_status(h, URGENCY_STATUS[decision.urgency])
         for request in decision.help:
             self._act(h, result, request)
+        if decision.urgency is Urgency.P1:
+            self._trigger("a new P1 emergency", {"emergency_lat": h.lat, "emergency_lng": h.lng,
+                                                  "emergency": decision.reason}, every_s=300)
 
     # --- help -----------------------------------------------------------------------------
 
     def _act(self, h: Household, result: CallResult, request: HelpRequest) -> None:
         now = self.clock.now()
         street = h.address.split(",")[0]
+        if request.kind in self.help_swaps:  # a re-plan switched this kind of help
+            swapped = self.help_swaps[request.kind]
+            request = HelpRequest(swapped, request.reason,
+                                  needs_approval=swapped in (ActionType.DELIVER_GENERATOR, ActionType.HOTEL_VOUCHER))
         kind = request.kind
         cost = COSTS.get(kind, 0.0)
         if request.needs_approval:
@@ -283,6 +376,7 @@ class Engine:
             booking = self.booker.book(kind, h, now, people=max(result.people, 1))
             if booking is None:  # only shelters fill up
                 self._emit(EventType.AGENT_NOTE, {"text": f"Every shelter is full. {street} needs another place to stay."}, h.id)
+                self._trigger("every shelter is full", {})
                 self._act(h, result, HelpRequest(ActionType.HOTEL_VOUCHER, request.reason, needs_approval=True))
                 return
             self._save_resource(booking.resource)
@@ -310,6 +404,7 @@ class Engine:
                     "text": f"Every {rtype.value} is out on a job now; the next one frees up in about {wait} min.",
                     "reason": "resources_busy",
                 })
+                self._trigger(f"every {rtype.value} is busy", {"next_free_in_min": wait})
 
     def _job_done(self, action_id: int, household_id: int) -> None:
         with self.db.session() as session:
@@ -429,6 +524,12 @@ class Engine:
             row.used, row.free_at = r.used, r.free_at
             session.add(row)
             session.commit()
+
+
+def _km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    from app.geo import haversine_km
+
+    return haversine_km(lat1, lng1, lat2, lng2)
 
 
 def _soon(minutes: int) -> str:

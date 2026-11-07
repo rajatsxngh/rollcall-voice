@@ -17,8 +17,11 @@ from app.city import copy_database
 from app.clock import RealClock, SimClock
 from app.config import Settings
 from app.db import Database, iso_utc, utcnow
+from app.agent.manager import ManagerAgent
 from app.engine.channels import ScriptedChannel
 from app.engine.core import Engine
+from app.engine.triage import RuleTriage
+from app.llm import LLMClient
 from app.events import EventBus, EventType
 from app.geo import WarningArea
 from app.models import Action, Call, CallPolicy, HiddenTruth, Household, Need, Resource, RunInfo, Status
@@ -74,11 +77,19 @@ def recover_after_restart(db: Database, bus: EventBus) -> int:
     return len(stuck)
 
 
+def make_brain(llm: LLMClient | None, db: Database, bus: EventBus | None) -> ManagerAgent | RuleTriage:
+    """Nemotron when a model provider is configured; otherwise the fixed rules."""
+    if llm is None or not llm.providers:
+        return RuleTriage()
+    note = (lambda text: bus.emit(EventType.AGENT_NOTE, {"text": text, "reason": "model_status"})) if bus else None
+    return ManagerAgent(llm, db=db, note=note)
+
+
 class LiveRun:
     """The single live run: started by POST /alerts/demo, cleared by POST /reset."""
 
-    def __init__(self, db: Database, bus: EventBus, settings: Settings) -> None:
-        self.db, self.bus, self.settings = db, bus, settings
+    def __init__(self, db: Database, bus: EventBus, settings: Settings, llm: LLMClient | None = None) -> None:
+        self.db, self.bus, self.settings, self.llm = db, bus, settings, llm
         self.engine: Engine | None = None
         self.clock: RealClock | None = None
 
@@ -109,9 +120,15 @@ class LiveRun:
         area = WarningArea.load(self.settings.data_dir / "warning_area.geojson")
         channel = ScriptedChannel(clock, load_truths(self.db), seed=city_seed(self.db))
         self.clock = clock
+        brain = make_brain(self.llm, self.db, self.bus)
         self.engine = Engine(db=self.db, bus=self.bus, clock=clock, area=area, channel=channel,
-                             policy=policy, lines=lines)
+                             triage=brain, policy=policy, lines=lines)
         await self.engine.start()
+        if not isinstance(brain, ManagerAgent):
+            self.bus.emit(EventType.AGENT_NOTE, {
+                "text": "No model key is set, so decisions run on the backup rules. Add NVIDIA_API_KEYS to .env for Nemotron.",
+                "reason": "no_model",
+            })
         return self.info() or {}
 
     def stop(self) -> None:
@@ -136,6 +153,7 @@ async def run_sim(
     policy: CallPolicy | str = CallPolicy.RISK_RANKED,
     lines: int = 100,
     seed: int | None = None,
+    llm: LLMClient | None = None,
 ) -> dict[str, Any]:
     """One simulated run in its own database file (copied from the seeded base). Returns the summary."""
     for suffix in ("", "-wal", "-shm"):
@@ -147,9 +165,16 @@ async def run_sim(
         bus = EventBus(db, now=clock.now)
         truths = load_truths(db)
         channel = ScriptedChannel(clock, truths, seed=seed if seed is not None else city_seed(db))
-        engine = Engine(db=db, bus=bus, clock=clock, area=area, channel=channel, policy=policy, lines=lines)
+        brain = make_brain(llm, db, bus)
+        engine = Engine(db=db, bus=bus, clock=clock, area=area, channel=channel, triage=brain,
+                        policy=policy, lines=lines)
         await engine.start()
         await clock.run()
-        return engine.summary(truths)
+        summary = engine.summary(truths)
+        summary["engine"] = brain.source
+        summary["replans"] = engine.replans
+        if isinstance(brain, ManagerAgent):
+            summary["decisions"] = dict(brain.stats)
+        return summary
     finally:
         db.dispose()

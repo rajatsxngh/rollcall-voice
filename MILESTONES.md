@@ -237,9 +237,11 @@ Build:
 
 Done when:
 
-- [ ] A demo run shows the one-line plan, a reason for every help decision, status updates every 10 clock-minutes, and at least one re-plan (for example, when crews run out) that visibly changes what happens next.
-- [ ] Removing the API key mid-run lets the run finish on rules, and the feed says so.
-- [ ] A test that feeds in malformed model output gets a retry and then the fallback, with no crash.
+- [ ] A demo run shows the one-line plan, a reason for every help decision, status updates every 10 clock-minutes, and at least one re-plan (for example, when crews run out) that visibly changes what happens next. *(Works end to end with a scripted stand-in for Nemotron: the plan line, model triage, status text, and re-plans that move homes near an emergency up the queue. Still to check with the real model once keys are in.)*
+- [x] Removing the API key mid-run lets the run finish on rules, and the feed says so. *(Tested: an outage falls back to rules with one feed line, and another when Nemotron comes back. With no key at all, the run says so and uses rules.)*
+- [x] A test that feeds in malformed model output gets a retry and then the fallback, with no crash.
+
+*Notes: `app/agent/manager.py`. Triage and re-plan are LangGraph graphs (ask, check, retry once, fall back); the engine owns the loop and timers. Clear cases (safe homes, no answer) skip the model. Calls start right away; Nemotron's plan line follows when it's written. Model replies are cached by request, so test reruns are free.*
 
 ## M6: Live voice in the loop (the demo moment)
 
