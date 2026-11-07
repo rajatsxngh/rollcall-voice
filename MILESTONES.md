@@ -118,7 +118,7 @@ Done when:
 - [x] `uv run uvicorn app.main:app` serves `/health`.
 - [ ] The smoke test gets answers from the manager and voice models, prints time to first token, and falls back to OpenRouter when the NVIDIA key is unset. *(Script ready: needs keys in `.env`, then `smoke_llm` and `smoke_llm --no-nvidia`.)*
 - [x] An event emitted from a script reaches a WebSocket client within a second and appears in `GET /events`. *(121–133 ms.)*
-- [ ] The repo is public, with the README stub.
+- [x] The repo is public, with the README stub. *(https://github.com/rajatsxngh/rollcall-voice)*
 
 ## M1: First real call (voice spike and go/no-go gate)
 
