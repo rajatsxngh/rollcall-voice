@@ -1,0 +1,27 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Generated at runtime (databases, caches, teammates' real phone numbers)
+data/runs/
+data/cache/
+data/demo_households.yaml
+*.db
+*.db-wal
+*.db-shm
+
+# Dashboard (M4)
+node_modules/
+dist/
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
