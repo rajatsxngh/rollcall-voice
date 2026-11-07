@@ -28,13 +28,15 @@ npm install
 npm run dev                             # http://127.0.0.1:5173, talks to the backend on port 8100
 ```
 
-Click **Tornado warning** to start a run. Until M3, a stand-in engine drives it straight from the fake data, with no AI.
+Click **Tornado warning** to start a run. Until the phone (M6) and simulated residents (M7) are wired in, calls are scripted from the fake data, with no AI.
 
 Checks, run from `backend/`:
 
 ```bash
 uv run pytest                                  # unit tests; no network or keys needed
 uv run python -m scripts.inspect_city          # urgency mix, traps, risk ranking vs list order
+uv run python -m scripts.run_sim --compare     # whole city on a simulated clock, both call orders
+uv run python -m scripts.sim_calls --traps --dry-run   # M7 simulator (needs keys without --dry-run)
 uv run python -m scripts.smoke_llm             # Nemotron answers, with time to first token
 uv run python -m scripts.smoke_llm --list-models
 uv run python -m scripts.events_cli check      # event -> WebSocket -> history (backend running)

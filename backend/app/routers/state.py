@@ -10,4 +10,5 @@ router = APIRouter(tags=["state"])
 
 @router.get("/state")
 def get_state(request: Request) -> dict[str, Any]:
-    return build_state(request.app.state.db, request.app.state.bus)
+    state = request.app.state
+    return build_state(state.db, state.bus, run=state.live_run.info())

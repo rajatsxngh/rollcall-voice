@@ -42,7 +42,7 @@ def helped_household_ids(db: Database) -> list[int]:
         rows = session.exec(
             select(Action.household_id)
             .where(Action.type.in_(list(HELP_ACTIONS)))
-            .where(Action.status.not_in([ActionStatus.REJECTED, ActionStatus.CANCELLED]))
+            .where(Action.status.not_in([ActionStatus.PENDING_APPROVAL, ActionStatus.REJECTED, ActionStatus.CANCELLED]))
             .distinct()
         ).all()
     return sorted(rows)
@@ -61,7 +61,7 @@ def compute_counts(rows: list[dict[str, Any]], helped: list[int]) -> dict[str, i
     }
 
 
-def build_state(db: Database, bus: EventBus) -> dict[str, Any]:
+def build_state(db: Database, bus: EventBus, run: dict[str, Any] | None = None) -> dict[str, Any]:
     last_event_id = bus.last_id()  # read first, so the client's catch-up can only overlap, not miss
     alert = current_alert(db)
     affected_ids = set(alert["payload"].get("affected_ids", [])) if alert else set()
@@ -90,6 +90,7 @@ def build_state(db: Database, bus: EventBus) -> dict[str, Any]:
         }
     return {
         "time": iso_utc(utcnow()),
+        "run": run,
         "last_event_id": last_event_id,
         "warning_area": warning_area,
         "households": rows,

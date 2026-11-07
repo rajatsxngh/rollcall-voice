@@ -226,7 +226,8 @@ class HiddenTruth(SQLModel, table=True):
     true_urgency: Urgency = Field(sa_column=enum_column(Urgency))
     true_needs: list[str] = Field(default_factory=list, sa_column=json_column())
     persona_style: Persona = Field(default=Persona.NORMAL, sa_column=enum_column(Persona))
-    answers_on_attempt: Optional[int] = 1  # None: never answers
+    # None: never answers. No non-null default: a default here turns an explicit None into 1 on save.
+    answers_on_attempt: Optional[int] = None
     replies_to_text: bool = True
 
 

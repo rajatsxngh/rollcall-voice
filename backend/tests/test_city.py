@@ -45,6 +45,24 @@ def test_urgency_mix_traps_and_follow_up_fields(city):
         assert (t.persona_style is Persona.NEVER_ANSWERS) == (t.answers_on_attempt is None)
 
 
+def test_never_answers_survives_the_database(tmp_path):
+    from sqlmodel import select
+
+    from app.city import write_city
+    from app.db import Database
+    from app.models import HiddenTruth
+
+    c = build_city(AREA, seed=42, n=400)
+    write_city(c, tmp_path / "c.db")
+    db = Database(tmp_path / "c.db")
+    with db.session() as session:
+        stored = session.exec(select(HiddenTruth)).all()
+    db.dispose()
+    never = [t for t in stored if t.persona_style is Persona.NEVER_ANSWERS]
+    assert never and all(t.answers_on_attempt is None for t in never)
+    assert all(t.answers_on_attempt in (1, 2, 3) for t in stored if t.persona_style is not Persona.NEVER_ANSWERS)
+
+
 def test_phones_are_undialable_and_unique(city):
     phones = [h.phone for h in city.households]
     assert len(set(phones)) == len(phones)

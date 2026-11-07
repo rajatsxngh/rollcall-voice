@@ -16,7 +16,7 @@ How we build the [PRD](docs/PRD.md): 11 milestones (M0 to M10) plus an optional 
 - [ ] M0 Foundation and shared contracts
 - [ ] M1 First real call (go/no-go gate)
 - [x] M2 Fake city and risk ranking
-- [ ] M3 Response engine (code only)
+- [x] M3 Response engine (code only)
 - [ ] M4 Live map dashboard v1
 - [ ] M5 Nemotron manager agent
 - [ ] M6 Live voice in the loop
@@ -192,9 +192,11 @@ Build:
 
 Done when:
 
-- [ ] `POST /alerts/demo` at 60× runs the whole affected area, events stream, and every affected household ends in a final status.
-- [ ] The same run in sim mode finishes in seconds and gives the same result for the same seed.
-- [ ] Tests pass for: no double booking, capacity respected, nearest available resource chosen, and only valid status changes.
+- [x] `POST /alerts/demo` at 60× runs the whole affected area, events stream, and every affected household ends in a final status. *(Checked in the dashboard on the full city; event times follow the run's clock.)*
+- [x] The same run in sim mode finishes in seconds and gives the same result for the same seed. *(`scripts.run_sim`: about 17 s for 1,365 homes.)*
+- [x] Tests pass for: no double booking, capacity respected, nearest available resource chosen, and only valid status changes.
+
+*Result on the scripted channel, 100 lines: both orders reach the same homes, but the median urgent home has help on the way after 2.4 min risk-ranked vs 12.7 min in list order. The "every urgent home" number is close (19.6 vs 21.4 min), because the last urgent homes are storm-damage cases that look low-risk on paper. M9 should lead with the median and the curve over time.*
 
 ## M4: Live map dashboard v1
 
@@ -286,6 +288,8 @@ Done when:
 - [ ] The 30 trap conversations read like real calls (spot-read five).
 - [ ] The pilot finishes, and rerunning it hits the cache in seconds.
 - [ ] The full run is going in the background, shows progress and survives a restart.
+
+*Status: the simulator is written and passes mocked tests (`app/sim/`, `scripts/sim_calls.py`); it waits on API keys. Run order: `sim_calls --traps --dry-run`, `--traps`, `--pilot 200`, then `--all`. Rough cost: 12–16 model calls per answered home, about 18k requests for the whole area: around 7 h on one free NVIDIA key, about 2.5 h on three keys in `NVIDIA_API_KEYS`.*
 
 Note: measure the real rate limit during the pilot. If the full city won't finish by about 7 am, run a stratified subset instead (all true P1–P2 homes, all traps and a sample of the rest) and state its size in the results.
 

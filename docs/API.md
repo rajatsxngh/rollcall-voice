@@ -15,12 +15,12 @@ The backend (`backend/`, FastAPI) and the dashboard (`dashboard/`) meet here. Wh
 | GET | `/state` | Snapshot of the whole run (below) | M2 |
 | GET | `/events?since=&limit=&household_id=` | Event history after an id | M0 |
 | WS | `/ws?since=<id>` | Replays events after `since`, then streams new ones | M0 |
-| POST | `/alerts/demo?speed=<x>` | Starts the response on the saved warning area. `speed` speeds up the clock (default 10) | M2 stub, M3 real |
-| POST | `/reset` | Sets every household back to not called, clears actions, emits `run.reset` | M2 stub, M3 real |
+| POST | `/alerts/demo?speed=<x>&lines=<n>&policy=<p>` | Starts the response on the saved warning area. `speed`: run-clock seconds per real second (default 10). `lines`: calls at once (default 100). `policy`: `risk_ranked` (default) or `list_order`. 409 while a run is active | M3 |
+| POST | `/reset` | Stops the run, sets every household back to not called, clears needs, actions and calls, frees every resource, emits `run.reset` | M3 |
 | POST | `/debug/emit` | Injects an event (scripts and development only) | M0 |
 | POST | `/vapi/chat/completions`, `/vapi/webhook` | Phone platform (Vapi) | M1 |
 
-Until M3, `POST /alerts/demo` runs a **stub engine**: it walks the affected households in risk order and sets each one's outcome straight from the hidden truth, with no AI. M3 replaces the internals; the endpoint and the events stay the same, so the dashboard doesn't change.
+The engine (M3) runs every timer on the run's clock, and **event times follow that clock**: at 60×, an hour of response takes a minute, and the feed's timestamps show response time. Until M6, calls go through a scripted channel that answers from the hidden truth with no AI.
 
 ## GET /meta
 
@@ -43,6 +43,8 @@ Status `style` values: `solid`, `pulse` (call in progress), `hollow` (no answer 
 ```json
 {
   "time": "2026-11-07T23:01:02.123Z",
+  "run": {"active": true, "engine": "rules", "policy": "risk_ranked", "lines": 100, "speed": 60.0,
+          "started_at": "2026-11-07T23:00:00.000Z", "finished_at": null, "clock": "2026-11-07T23:01:02.123Z"},
   "last_event_id": 1234,
   "warning_area": {"type": "Feature", "properties": {"title": "Tornado Warning", "issued_at": "2026-11-07T23:00:00.000Z", "event_id": 1201}, "geometry": {"type": "Polygon", "coordinates": [[[-96.8, 32.9], "..."]]}},
   "households": [
@@ -55,6 +57,7 @@ Status `style` values: `solid`, `pulse` (call in progress), `hollow` (no answer 
 }
 ```
 
+- `run` is `null` until a run starts; it stays (with `active: false`) after the first pass ends, until reset.
 - `warning_area` is `null` until an alert has started the run. Before that, `affected` is `false` for every household.
 - Phone numbers are never sent to the dashboard.
 - Load `/state`, then connect to `/ws?since=<last_event_id>`. On a dropped connection, reconnect with the last event id you saw.
@@ -80,7 +83,9 @@ Events the dashboard uses:
 | `call.ended` | set | `call_id`, `outcome`, `summary`; phone calls add `ended_reason`, `duration_s` |
 | `household.status` | set | `status`, `previous` |
 | `need.recorded` | set | `category`, `details`, `urgency`, `call_id`, `need_id` (null if the household isn't in the database), `text` |
-| `action.created` | set | `action_id`, `type`, `status`, `resource_id`, `reason`, `text` |
+| `action.created` | set | `action_id`, `type`, `status`, `resource_id`, `reason`, `eta_minutes` (booked help), `text` (not for claims, follow-ups) |
+| `action.updated` | set | `action_id`, `status` (e.g. `done` when a crew finishes) |
+| `approval.requested` | set | `action_id`, `type`, `cost`, `reason`, `text` |
 | `agent.note` | optional | `text`, optional `reason`, optional `tool` (the in-call tool that wrote it) |
 
 For phone calls, `call_id` is the phone platform's call id (a string). Rows in the `calls` table for phone calls start in M6.

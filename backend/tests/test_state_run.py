@@ -53,7 +53,10 @@ def test_demo_run_then_reset(city_client):
     events = city_client.get("/events", params={"limit": 5000}).json()["events"]
     types = [e["type"] for e in events]
     assert types[0] == "alert.received" and "plan.created" in types and "action.created" in types
-    assert all("text" in e["payload"] for e in events if e["type"] == "action.created" and e["payload"]["type"] != "open_claim")
+    bookkeeping = {"open_claim", "schedule_followup", "send_text"}
+    assert all("text" in e["payload"] for e in events
+               if e["type"] == "action.created" and e["payload"]["type"] not in bookkeeping)
+    assert state["run"]["engine"] == "rules" and not state["run"]["active"]
 
     assert city_client.post("/reset").json()["reset"]
     after = city_client.get("/state").json()
@@ -66,3 +69,33 @@ def test_second_alert_while_running_is_refused(city_client):
     city_client.post("/alerts/demo", params={"speed": 1})
     assert city_client.post("/alerts/demo").status_code == 409
     city_client.post("/reset")
+
+
+def test_event_times_follow_the_run_clock(city_client):
+    city_client.post("/alerts/demo", params={"speed": 600})
+    state = wait_until(city_client, lambda s: s["run"] and not s["run"]["active"])
+    events = city_client.get("/events", params={"limit": 5000}).json()["events"]
+    alert = next(e for e in events if e["type"] == "alert.received")
+    done = next(e for e in events if e["type"] == "agent.note" and "First pass done" in e["payload"]["text"])
+    from datetime import datetime
+
+    elapsed = (datetime.fromisoformat(done["time"].replace("Z", "+00:00"))
+               - datetime.fromisoformat(alert["time"].replace("Z", "+00:00"))).total_seconds()
+    assert elapsed > 60  # simulated minutes passed, though the test only took a moment
+    assert state["counts"]["called"] == state["counts"]["affected"]
+    city_client.post("/reset")
+
+
+def test_restart_puts_stuck_calls_back(settings):
+    data = settings.data_dir
+    shutil.copy(REPO_ROOT / "data" / "warning_area.geojson", data / "warning_area.geojson")
+    area = WarningArea.load(data / "warning_area.geojson")
+    city = build_city(area, seed=3, n=50)
+    for h in city.households[:3]:
+        h.status = "calling"
+    write_city(city, settings.live_db_path)
+    with TestClient(create_app(settings)) as client:
+        state = client.get("/state").json()
+        assert not any(h["status"] == "calling" for h in state["households"])
+        notes = [e for e in client.get("/events").json()["events"] if e["type"] == "agent.note"]
+        assert notes and "restarted" in notes[-1]["payload"]["text"]

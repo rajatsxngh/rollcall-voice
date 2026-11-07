@@ -25,14 +25,16 @@ def iso_utc(value: datetime | None) -> str | None:
 
 
 class Database:
-    def __init__(self, path: Path | str) -> None:
+    def __init__(self, path: Path | str, durable: bool = True) -> None:
+        """durable=False skips syncing to disk: much faster, for throwaway simulated runs only."""
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.engine = create_engine(
             f"sqlite:///{self.path.as_posix()}",
             connect_args={"check_same_thread": False, "timeout": 30},
         )
-        event.listen(self.engine, "connect", _set_pragmas)
+        sync = "NORMAL" if durable else "OFF"
+        event.listen(self.engine, "connect", lambda conn, record: _set_pragmas(conn, sync))
 
     def create_all(self) -> None:
         from app import models  # noqa: F401  (registers the tables)
@@ -48,9 +50,9 @@ class Database:
         self.engine.dispose()
 
 
-def _set_pragmas(dbapi_connection, _record) -> None:
+def _set_pragmas(dbapi_connection, sync: str) -> None:
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")  # readers don't block the writer
-    cursor.execute("PRAGMA synchronous=NORMAL")  # fast commits, safe with WAL
+    cursor.execute(f"PRAGMA synchronous={sync}")  # NORMAL: fast commits, safe with WAL
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
