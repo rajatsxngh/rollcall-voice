@@ -135,7 +135,7 @@ async def chat_completions(request: Request) -> Any:
     }
     if body.get("tool_choice") is not None:
         options["tool_choice"] = body["tool_choice"]
-    turn = _Turn(started=started, household_id=household_id_from(body), call_id=_call_id(body))
+    turn = _Turn(started=started, household_id=resolve_household(state.db, body), call_id=_call_id(body))
     reply = _Reply(model=state.settings.voice_model)
     finish = BackgroundTask(_finish_turn, state.db, turn)
     if body.get("stream") is False:
@@ -386,6 +386,36 @@ def household_id_from(container: dict[str, Any]) -> int | None:
     return None
 
 
+def caller_number(container: dict[str, Any]) -> str | None:
+    """The other party's phone number (the caller on inbound calls, the callee on outbound)."""
+    call = _dict(container.get("call"))
+    for value in (_dict(call.get("customer")).get("number"), _dict(container.get("customer")).get("number")):
+        if value:
+            return str(value)
+    return None
+
+
+def resolve_household(db: Database, container: dict[str, Any]) -> int | None:
+    """Metadata first (outbound calls we place); otherwise match the phone number to a household.
+    Inbound calls (someone dials the RollCall number) only have the number. Live demo homes win."""
+    found = household_id_from(container)
+    if found is not None:
+        return found
+    number = caller_number(container)
+    digits = "".join(ch for ch in number or "" if ch.isdigit())[-10:]
+    if len(digits) < 10:
+        return None
+    from sqlmodel import select
+
+    from app.models import Household
+
+    with db.session() as session:
+        matches = [h for h in session.exec(select(Household)).all()
+                   if "".join(ch for ch in h.phone if ch.isdigit())[-10:] == digits]
+    matches.sort(key=lambda h: (not h.live, h.id))
+    return matches[0].id if matches else None
+
+
 def _call_id(container: dict[str, Any]) -> str | None:
     value = _dict(container.get("call")).get("id")
     return str(value) if value else None
@@ -494,7 +524,7 @@ def _answer_tool_calls(state: Any, calls: _CallTracker, message: dict[str, Any])
     ctx = voice_tools.ToolContext(
         db=state.db,
         bus=state.bus,
-        household_id=household_id_from(message),
+        household_id=resolve_household(state.db, message),
         call_id=_call_id(message),
         caller_name=_caller_name(message),
     )
@@ -547,7 +577,7 @@ def _run_tool(
 
 def _known_household(state: Any, message: dict[str, Any]) -> int | None:
     """The call's household id, only if that household exists (events never point at nothing)."""
-    household = voice_tools.find_household(state.db, household_id_from(message))
+    household = voice_tools.find_household(state.db, resolve_household(state.db, message))
     return household.id if household else None
 
 
