@@ -280,7 +280,7 @@ def write_results(results: dict[str, Any], out_dir: Path = RESULTS_DIR) -> tuple
     payload = json.dumps(results, indent=2, default=str)
     latest.write_text(payload, encoding="utf-8")
     (out_dir / f"results-{stamp}.json").write_text(payload, encoding="utf-8")
-    md = REPO_ROOT / "RESULTS.md"
+    md = REPO_ROOT / "RESULTS.md" if out_dir == RESULTS_DIR else out_dir / "RESULTS.md"  # tests stay out of the repo
     md.write_text(render_markdown(results), encoding="utf-8")
     return latest, md
 
