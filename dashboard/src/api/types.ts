@@ -100,3 +100,91 @@ export interface Health {
   status: string
   last_event_id: number
 }
+
+// --- M8: approvals and household detail ----------------------------------------------
+
+/** One action waiting for the coordinator (GET /approvals). */
+export interface ApprovalItem {
+  action_id: number
+  household_id: number
+  name: string
+  address: string
+  type: string
+  cost: number | null
+  reason: string
+  /** The household's status: `emergency` or `urgent` make it life-safety. */
+  urgency_status: string | null
+  created_at: string
+}
+
+export interface ApprovalsList {
+  approvals: ApprovalItem[]
+}
+
+export interface RiskFactor {
+  key: string
+  label: string
+  points: number
+}
+
+export interface HouseholdProfile {
+  age: number | null
+  lives_alone: boolean | null
+  medical_device: string | null
+  mobility: string | null
+  has_car: boolean | null
+  kids_under_5: number | null
+  language: string | null
+}
+
+export interface HouseholdNeed {
+  id: number
+  category: string
+  details: string
+  urgency: string
+  created_at: string
+}
+
+export interface TranscriptLine {
+  role: string
+  line: string
+}
+
+export interface HouseholdCall {
+  id: number | string
+  attempt: number
+  channel: string
+  outcome: string | null
+  started_at: string | null
+  ended_at: string | null
+  summary: string | null
+  transcript: TranscriptLine[] | null
+}
+
+export interface HouseholdAction {
+  id: number
+  type: string
+  status: string
+  cost: number | null
+  reason: string | null
+  needs_approval: boolean
+  resource: string | null
+  scheduled_for: string | null
+  created_at: string
+}
+
+export interface FollowUp {
+  step: number
+  channel: string
+  at: string
+}
+
+/** GET /households/{id}. */
+export interface HouseholdDetail extends Household {
+  risk_factors: RiskFactor[]
+  profile: HouseholdProfile
+  needs: HouseholdNeed[]
+  calls: HouseholdCall[]
+  actions: HouseholdAction[]
+  next_followup: FollowUp | null
+}

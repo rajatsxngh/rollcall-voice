@@ -1,4 +1,4 @@
-import type { EventsPage, Health, Meta, RunEvent, RunState } from './types'
+import type { ApprovalItem, ApprovalsList, EventsPage, Health, HouseholdDetail, Meta, RunEvent, RunState } from './types'
 
 /** Where the backend runs. Set VITE_API_BASE (see .env.example); no trailing slash. */
 export const API_BASE = (
@@ -29,6 +29,11 @@ export interface Transport {
   startDemo(speed: number): Promise<unknown>
   reset(): Promise<unknown>
   openStream(since: number, handlers: StreamHandlers): StreamHandle
+  // M8
+  getApprovals(): Promise<ApprovalsList>
+  /** 404 unknown, 409 already decided (both as ApiError). */
+  decideApproval(actionId: number, approve: boolean): Promise<ApprovalItem>
+  getHousehold(id: number): Promise<HouseholdDetail>
 }
 
 export class ApiError extends Error {
@@ -40,10 +45,12 @@ export class ApiError extends Error {
 }
 
 export function httpTransport(base: string = API_BASE): Transport {
-  async function request<T>(method: 'GET' | 'POST', path: string): Promise<T> {
+  async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
     let res: Response
     try {
-      res = await fetch(base + path, { method, headers: { Accept: 'application/json' } })
+      const headers: Record<string, string> = { Accept: 'application/json' }
+      if (body !== undefined) headers['Content-Type'] = 'application/json'
+      res = await fetch(base + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
     } catch {
       throw new ApiError(0, `Can't reach the backend at ${base}`)
     }
@@ -68,6 +75,10 @@ export function httpTransport(base: string = API_BASE): Transport {
     getHealth: () => request<Health>('GET', '/health'),
     startDemo: (speed) => request('POST', `/alerts/demo?speed=${encodeURIComponent(speed)}`),
     reset: () => request('POST', '/reset'),
+    getApprovals: () => request<ApprovalsList>('GET', '/approvals'),
+    decideApproval: (actionId, approve) =>
+      request<ApprovalItem>('POST', `/approvals/${actionId}/${approve ? 'approve' : 'reject'}`, { by: 'coordinator' }),
+    getHousehold: (id) => request<HouseholdDetail>('GET', `/households/${id}`),
     openStream(since, handlers) {
       const ws = new WebSocket(`${base.replace(/^http/, 'ws')}/ws?since=${since}`)
       let done = false

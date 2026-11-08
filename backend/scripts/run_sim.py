@@ -30,7 +30,7 @@ ROWS = [
     ("true_urgent_helped", "...with help on the way"),
     ("median_minutes_to_help_urgent", "median minutes until an urgent home had help"),
     ("minutes_until_all_reached_urgent_helped", "minutes until every reached urgent home had help"),
-    ("minutes", "minutes until the first pass ended"),
+    ("minutes", "minutes until every home was accounted for"),
 ]
 
 

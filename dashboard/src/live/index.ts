@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { API_BASE, httpTransport } from '../api/transport'
 import { fixtureTransport } from '../fixture/fixtureTransport'
+import { ApprovalsStore, type ApprovalsSnapshot } from '../store/approvals'
 import { RunStore, type UiSnapshot } from '../store/runStore'
 import { LiveSync } from './sync'
 
@@ -13,6 +14,18 @@ export const sync = new LiveSync(store, transport)
 
 export function useRunSnapshot(): UiSnapshot {
   return useSyncExternalStore(store.subscribe, store.getSnapshot)
+}
+
+/** M8: the coordinator's queue. Reloads with every /state snapshot, then follows the events. */
+export const approvals = new ApprovalsStore(
+  async () => (await transport.getApprovals()).approvals,
+  (id) => store.households.get(id),
+)
+store.onEvent((e) => approvals.applyEvent(e))
+store.onLoad(() => void approvals.load())
+
+export function useApprovals(): ApprovalsSnapshot {
+  return useSyncExternalStore(approvals.subscribe, approvals.getSnapshot)
 }
 
 // The store and the socket live here. Hot-swapping this module (or the store, sync or transport

@@ -122,7 +122,8 @@ class LiveRun:
         self.clock = clock
         brain = make_brain(self.llm, self.db, self.bus)
         self.engine = Engine(db=self.db, bus=self.bus, clock=clock, area=area, channel=channel,
-                             triage=brain, policy=policy, lines=lines)
+                             triage=brain, policy=policy, lines=lines,
+                             approval_threshold=self.settings.approval_threshold)
         await self.engine.start()
         if not isinstance(brain, ManagerAgent):
             self.bus.emit(EventType.AGENT_NOTE, {

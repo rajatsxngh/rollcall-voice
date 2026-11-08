@@ -109,12 +109,15 @@ TRAPS = [
     (Persona.HANGS_UP, 5),
 ]
 
-CREWS = [(32.955, -96.745), (32.980, -96.700), (33.005, -96.660), (32.925, -96.770),
-         (32.940, -96.690), (33.020, -96.630)]
+# 20 crews (local plus mutual aid). The PRD's sample of 6 left urgent homes waiting 6 to 12 hours for
+# about 80 urgent jobs, so this is tuned up, as the PRD's fake-data plan allows. Spread along the track.
+CREWS = [(round(32.885 + 0.0075 * i + (0.012 if i % 2 else -0.012), 4),
+          round(-96.785 + 0.0085 * i + (0.006 if i % 3 == 0 else -0.004), 4)) for i in range(20)]
 SHELTERS = [("Richardson East Shelter", 32.962, -96.712, 120),
             ("Plano North Shelter", 33.031, -96.700, 80),
             ("Garland West Shelter", 32.918, -96.655, 150)]
-ADJUSTERS = [(32.950, -96.735), (32.990, -96.680), (32.930, -96.720), (33.010, -96.645)]
+ADJUSTERS = [(32.950, -96.735), (32.990, -96.680), (32.930, -96.720), (33.010, -96.645),
+             (32.905, -96.760), (32.970, -96.705), (33.025, -96.630), (32.945, -96.680)]
 GENERATORS = [(32.958, -96.725), (33.000, -96.655)]
 
 

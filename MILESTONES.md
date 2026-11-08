@@ -17,11 +17,11 @@ How we build the [PRD](docs/PRD.md): 11 milestones (M0 to M10) plus an optional 
 - [ ] M1 First real call (go/no-go gate)
 - [x] M2 Fake city and risk ranking
 - [x] M3 Response engine (code only)
-- [ ] M4 Live map dashboard v1
+- [ ] M4 Live map dashboard v1 (one human check left)
 - [ ] M5 Nemotron manager agent
 - [ ] M6 Live voice in the loop
 - [ ] M7 Simulated residents at scale
-- [ ] M8 Follow-ups and approvals
+- [ ] M8 Follow-ups and approvals (live text check left)
 - [ ] M9 Results: RollCall vs list order
 - [ ] M10 Demo hardening and submission
 
@@ -310,9 +310,9 @@ Build:
 
 Done when:
 
-- [ ] Never-answer households go through all four ladder steps and end escalated. "Not reached" reaches zero, and a test asserts it never rises.
-- [ ] Texting "2" from a teammate's phone turns that home to "needs help" and sends help.
-- [ ] A generator or hotel voucher waits in the queue; approving runs it, rejecting leads to an alternative, and both are logged with reasons.
+- [x] Never-answer households go through all four ladder steps and end escalated. "Not reached" reaches zero, and a test asserts it never rises. *(Full city, scripted calls: 0 not reached; 42 escalated with in-person checks; all 116 truly urgent homes got help, vs 102 without follow-ups.)*
+- [ ] Texting "2" from a teammate's phone turns that home to "needs help" and sends help. *(`POST /sms/inbound` and the reply handling are built and tested with simulated replies (77 of 143 texts answered on the full city); a real text needs Twilio pointed at the tunnel.)*
+- [x] A generator or hotel voucher waits in the queue; approving runs it, rejecting leads to an alternative, and both are logged with reasons. *(A rejected generator becomes a crew with spare batteries; a rejected voucher becomes a shelter bed if any are left.)*
 
 ## M9: Results: RollCall vs list order
 
@@ -423,3 +423,4 @@ Never cut: the live call to map to help to text moment, the follow-up ladder, ap
 - **Phone platform with credits** (PRD open question): Vapi, Twilio or Photon.
 - **Team roles** (PRD open question): who owns each lane.
 - **Spanish and NVIDIA voice** (PRD open questions): this plan makes both stretch items (S2, S4).
+- **Crews and adjusters** (fake data, Sat evening): 20 crews and 8 adjusters instead of the PRD sample's 6 and 4. With 6 crews, urgent homes waited 6 to 12 hours for about 80 urgent jobs; now the median is about 1.5 hours. P3 crew visits go on a next-day list instead of taking a crew now.

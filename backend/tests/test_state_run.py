@@ -43,8 +43,7 @@ def test_state_before_any_alert(city_client):
 
 def test_demo_run_then_reset(city_client):
     assert city_client.post("/alerts/demo", params={"speed": 1000}).json()["started"]
-    state = wait_until(city_client, lambda s: s["counts"]["affected"] and s["counts"]["called"] == s["counts"]["affected"]
-                       and not any(h["status"] == "calling" for h in s["households"]))
+    state = wait_until(city_client, lambda s: s["run"] and not s["run"]["active"])  # follow-ups included
     counts = state["counts"]
     assert state["warning_area"]["geometry"]["type"] == "Polygon"
     assert counts["reached"] > 0 and counts["not_reached"] < counts["affected"]

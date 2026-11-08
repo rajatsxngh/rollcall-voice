@@ -20,6 +20,7 @@ class HelpRequest:
     kind: ActionType
     reason: str  # plain words, shown in the feed
     needs_approval: bool = False
+    deferred: bool = False  # within a day: next-day list, no resource booked now
 
 
 @dataclass

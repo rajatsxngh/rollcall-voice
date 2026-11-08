@@ -84,6 +84,15 @@ class ScriptedChannel:
         result = self.result_for(household, attempt)
         self.clock.call_later(result.duration_s, lambda: done(result))
 
+    def text_reply(self, h: Household) -> tuple[float, str] | None:
+        """How (and whether) this household answers the follow-up text: (seconds later, body)."""
+        truth = self.truths.get(h.id)
+        if truth is None or not truth.replies_to_text:
+            return None
+        rng = random.Random(f"{self.seed}:{h.id}:text")
+        body = {Urgency.P1: "3", Urgency.P2: "2", Urgency.P3: "2"}.get(truth.true_urgency, "1")
+        return rng.uniform(120, 900), body
+
     def result_for(self, h: Household, attempt: int) -> CallResult:
         rng = random.Random(f"{self.seed}:{h.id}:{attempt}")  # same household + attempt, same call
         truth = self.truths.get(h.id)

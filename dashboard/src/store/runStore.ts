@@ -142,6 +142,7 @@ export class RunStore {
   private uiListeners = new Set<() => void>()
   private householdListeners = new Set<(change: HouseholdChange) => void>()
   private eventListeners = new Set<(event: RunEvent) => void>()
+  private loadListeners = new Set<() => void>()
   private snapshot: UiSnapshot = this.buildSnapshot()
 
   // --- Subscriptions ------------------------------------------------------------------
@@ -164,6 +165,12 @@ export class RunStore {
   onEvent(listener: (event: RunEvent) => void): () => void {
     this.eventListeners.add(listener)
     return () => this.eventListeners.delete(listener)
+  }
+
+  /** After every /state snapshot is loaded (start, reset, log restart). For panels with their own data. */
+  onLoad(listener: () => void): () => void {
+    this.loadListeners.add(listener)
+    return () => this.loadListeners.delete(listener)
   }
 
   // --- Vocabulary ---------------------------------------------------------------------
@@ -245,6 +252,7 @@ export class RunStore {
     this.schedule(true)
 
     if (import.meta.env.DEV) this.checkCounts(state)
+    for (const listener of this.loadListeners) listener()
   }
 
   /** Apply one live event. Returns false for an event already seen. */

@@ -13,13 +13,13 @@ import logging
 import statistics
 from collections import Counter
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlmodel import select
 
 from app.clock import Clock, Timer
-from app.db import Database
+from app.db import Database, iso_utc
 from app.engine.booking import COSTS, RESOURCE_FOR, Booker, Booking
 from app.engine.channels import CallChannel, CallResult
 from app.engine.triage import Decision, HelpRequest, RuleTriage
@@ -34,7 +34,9 @@ from app.models import (
     ActionStatus,
     ActionType,
     Call,
+    CallOutcome,
     CallPolicy,
+    Channel,
     HiddenTruth,
     Household,
     Need,
@@ -116,7 +118,12 @@ class Engine:
         lines: int = 100,
         live_channel: CallChannel | None = None,
         on_finish: Callable[[Engine], None] | None = None,
+        approval_threshold: float = 500.0,
+        text_sender: Callable[[Household, str], None] | None = None,
     ) -> None:
+        # Sends follow-up texts. Default: none sent (the sms.sent event is the log). Real texts to
+        # consenting live phones arrive with the phone work in M6.
+        self.text_sender = text_sender or (lambda household, body: None)
         self.db, self.bus, self.clock, self.area = db, bus, clock, area
         self.channel = channel
         self.live_channel = live_channel  # real phones (M6); without it, live demo homes are skipped
@@ -136,6 +143,11 @@ class Engine:
         self.booker = Booker([])
         self._status_timer: Timer | None = None
         self._busy_noted: set[ResourceType] = set()
+        self.approval_threshold = approval_threshold
+        self.next_step: dict[int, dict[str, Any]] = {}  # the next follow-up step per household (detail panel)
+        self.followups: dict[int, Timer] = {}  # households waiting for their next follow-up step
+        self._followup_seq = itertools.count()
+        self._first_pass_noted = False
         self.rank: dict[int, int] = {}  # each household's place in the original call order
         self.help_swaps: dict[ActionType, ActionType] = {}  # set by re-plans, applied at booking
         self._last_replan: dict[str, datetime] = {}
@@ -275,7 +287,19 @@ class Engine:
     def _check_done(self) -> None:
         if self.started_at is None or self.finished:
             return
-        if self.active == 0 and self.pending == 0 and not len(self.queue):
+        if self.active or self.pending or len(self.queue):
+            return
+        if not self._first_pass_noted:
+            self._first_pass_noted = True
+            c = self.counts()
+            minutes = (self.clock.now() - self.started_at).total_seconds() / 60
+            waiting = f" Following up with {len(self.followups):,} homes nobody reached." if self.followups else ""
+            self._emit(EventType.AGENT_NOTE, {
+                "counts": c,
+                "text": (f"First pass done in {minutes:.0f} minutes: {c['reached']:,} reached, {c['urgent']} urgent, "
+                         f"{c['help_sent']} with help on the way.{waiting}"),
+            })
+        if not self.followups:
             self._finish()
 
     def _finish(self) -> None:
@@ -283,15 +307,148 @@ class Engine:
         if self._status_timer:
             self._status_timer.cancel()
         counts = self.counts()
+        statuses = Counter(h.status for h in self.households.values())
         minutes = (self.finished_at - self.started_at).total_seconds() / 60
         self._emit(EventType.AGENT_NOTE, {
             "counts": counts,
-            "text": (f"First pass done in {minutes:.0f} minutes: {counts['reached']:,} reached, "
-                     f"{counts['urgent']} urgent, {counts['help_sent']} with help on the way, "
-                     f"{counts['not_reached']:,} not reached yet (follow-ups come in M8)."),
+            "text": (f"Every home is accounted for after {minutes:.0f} minutes: {counts['reached']:,} reached, "
+                     f"{statuses[Status.ESCALATED]} getting an in-person check, {counts['not_reached']} not reached. "
+                     f"{counts['urgent']} urgent, {counts['help_sent']} with help on the way."),
         })
         if self.on_finish:
             self.on_finish(self)
+
+    # --- follow-up ladder (M8) ------------------------------------------------------------------
+
+    def _follow_up(self, h: Household) -> None:
+        """Nobody was reached: take the next step on the ladder (docs/API.md)."""
+        attempt = self.attempts[h.id]
+        now = self.clock.now()
+        if attempt == 1:
+            due = now + timedelta(minutes=10)
+            self._wait(h, due, lambda: self._requeue(h))
+            self._emit(EventType.FOLLOWUP_SCHEDULED, {"step": 1, "channel": "call", "at": iso_utc(due)}, h.id)
+            self.next_step[h.id] = {"step": 1, "channel": "call", "at": iso_utc(due)}
+        elif attempt == 2:
+            body = "RollCall for State Farm: we couldn't reach you about the tornado warning. Reply 1 safe, 2 need help, 3 emergency."
+            self.text_sender(h, body)
+            self._emit(EventType.SMS_SENT, {"body": body, "step": 2}, h.id)
+            self._emit(EventType.FOLLOWUP_SCHEDULED, {"step": 2, "channel": "text", "at": iso_utc(now)}, h.id)
+            reply = getattr(self.channel, "text_reply", None)
+            answer = reply(h) if reply and not h.live else None
+            if answer is not None and answer[0] < 20 * 60:
+                delay, text = answer
+                self.clock.call_later(delay, lambda: self.handle_text_reply(h, text))
+            due = now + timedelta(minutes=20)
+            self._wait(h, due, lambda: self._requeue(h))
+            self._emit(EventType.FOLLOWUP_SCHEDULED, {"step": 3, "channel": "call", "at": iso_utc(due)}, h.id)
+            self.next_step[h.id] = {"step": 3, "channel": "call", "at": iso_utc(due)}
+        else:
+            self._set_status(h, Status.ESCALATED)
+            self._emit(EventType.FOLLOWUP_SCHEDULED, {"step": 4, "channel": "in_person", "at": iso_utc(now)}, h.id)
+            self.next_step.pop(h.id, None)
+            self._act(h, CallResult(h.id, attempt, self.channel.name, CallOutcome.NO_ANSWER),
+                      HelpRequest(ActionType.IN_PERSON_CHECK, "no answer after 3 calls and a text"))
+
+    def _wait(self, h: Household, due: datetime, step: Callable[[], None]) -> None:
+        def fire() -> None:
+            self.followups.pop(h.id, None)
+            step()
+            self._check_done()
+        self.followups[h.id] = self.clock.call_at(due, fire)
+
+    def _requeue(self, h: Household) -> None:
+        if h.status is not Status.NO_ANSWER or self.finished:
+            return  # resolved meanwhile (a text reply)
+        self.queue.push(h.id, (-2, next(self._followup_seq)))  # due follow-ups go before first calls
+        self._fill()
+
+    def handle_text_reply(self, h: Household, body: str) -> None:
+        """A text came in from this household: "1" safe, "2" need help, "3" emergency, or free text."""
+        timer = self.followups.pop(h.id, None)
+        self.next_step.pop(h.id, None)
+        if timer:
+            timer.cancel()
+        clean = body.strip()
+        parsed = {"1": "safe", "2": "needs_help", "3": "emergency"}.get(clean[:1] if len(clean) <= 3 else "", "free_text")
+        street = h.address.split(",")[0]
+        label = {"safe": "safe", "needs_help": "needs help", "emergency": "EMERGENCY"}.get(parsed, f'"{clean[:80]}"')
+        self._emit(EventType.SMS_RECEIVED, {"body": clean[:300], "parsed": parsed,
+                                            "text": f"Text reply from {street}: {label}."}, h.id)
+        if parsed == "safe":
+            decision = Decision(Urgency.P4, reason="replied 1 (safe)")
+        elif parsed == "emergency":
+            decision = Decision(Urgency.P1, [HelpRequest(ActionType.TRANSFER_TO_HUMAN, "replied 3 (emergency) to the text"),
+                                             HelpRequest(ActionType.DISPATCH_CREW, "replied 3 (emergency) to the text")])
+        else:
+            reason = "replied 2 (needs help) to the text" if parsed == "needs_help" else f'texted: "{_clip_words(clean, 10)}"'
+            decision = Decision(Urgency.P3, [HelpRequest(ActionType.DISPATCH_CREW, reason)])
+        if h.status is Status.CALLING:
+            self._set_status(h, URGENCY_STATUS[decision.urgency])  # the call in progress can't lower it
+        result = CallResult(h.id, self.attempts[h.id], Channel.SMS, CallOutcome.COMPLETED, urgency=decision.urgency)
+        self._apply(h, result, decision)
+        self._check_done()
+
+    # --- approvals (M8) ---------------------------------------------------------------------------
+
+    def decide_approval(self, action_id: int, approved: bool, by: str = "coordinator") -> Action:
+        """The coordinator approved or rejected a costly action. Approved help is booked now;
+        a rejection gets a cheaper alternative."""
+        with self.db.session() as session:
+            action = session.get(Action, action_id)
+        if action is None:
+            raise KeyError(action_id)
+        if action.status is not ActionStatus.PENDING_APPROVAL:
+            raise ValueError("already decided")
+        h = self.households.get(action.household_id)
+        if h is None:
+            with self.db.session() as session:
+                h = session.get(Household, action.household_id)
+        street = h.address.split(",")[0]
+        label = LABEL.get(action.type, action.type.value)
+        now = self.clock.now()
+        booking = None
+        if approved and action.type in RESOURCE_FOR:
+            booking = self.booker.book(action.type, h, now)
+            if booking:
+                self._save_resource(booking.resource)
+        with self.db.session() as session:
+            row = session.get(Action, action_id)
+            row.status = ActionStatus.SCHEDULED if approved else ActionStatus.REJECTED
+            row.approved_by, row.updated_at = by, now
+            if booking:
+                row.resource_id, row.scheduled_for = booking.resource.id, booking.arrive_at
+                row.details = {"start_at": booking.start_at.isoformat(), "arrive_at": booking.arrive_at.isoformat(),
+                               "done_at": booking.done_at.isoformat() if booking.done_at else None,
+                               "distance_km": round(booking.distance_km, 2), "beds": booking.beds}
+            session.add(row)
+            session.commit()
+            action = row
+        if approved:
+            self.help_at.setdefault(h.id, now)
+            where = f" {booking.resource.name} arriving {_soon(booking.eta_minutes(now))}." if booking else ""
+            text = f"Approved by the {by}: {label.lower()} for {street}.{where}"
+        else:
+            text = f"Rejected by the {by}: {label.lower()} for {street}."
+        self._emit(EventType.APPROVAL_DECIDED, {"action_id": action_id, "type": action.type, "approved": approved,
+                                                "by": by, "text": text}, h.id)
+        self._emit(EventType.ACTION_UPDATED, {"action_id": action_id, "status": action.status}, h.id)
+        if booking and booking.done_at:
+            self.clock.call_at(booking.done_at, lambda: self._job_done(action_id, h.id))
+        if not approved:
+            self._alternative(h, action)
+        return action
+
+    def _alternative(self, h: Household, action: Action) -> None:
+        result = CallResult(h.id, self.attempts[h.id], self.channel.name, CallOutcome.COMPLETED, people=2)
+        if action.type is ActionType.DELIVER_GENERATOR:
+            self._act(h, result, HelpRequest(ActionType.DISPATCH_CREW, f"spare batteries instead of a generator: {action.reason}"))
+        elif action.type is ActionType.HOTEL_VOUCHER:
+            if any(r.capacity - r.used >= 2 for r in self.booker.pool(ResourceType.SHELTER)):
+                self._act(h, result, HelpRequest(ActionType.RESERVE_SHELTER_BED, action.reason))
+            else:
+                self._emit(EventType.AGENT_NOTE, {"text": f"No shelter room and the voucher was rejected: {h.address.split(',')[0]} needs a decision.",
+                                                  "reason": "coordinator"}, h.id)
 
     async def _status_tick(self) -> None:
         if self.finished:
@@ -311,6 +468,7 @@ class Engine:
     # --- calls ----------------------------------------------------------------------------
 
     def _start_call(self, h: Household) -> None:
+        self.next_step.pop(h.id, None)
         self.attempts[h.id] += 1
         attempt = self.attempts[h.id]
         self.active += 1
@@ -343,10 +501,15 @@ class Engine:
 
     def _apply(self, h: Household, result: CallResult, decision: Decision) -> None:
         if decision.urgency is None:
+            if h.status in REACHED or h.status is Status.ESCALATED:
+                return  # resolved meanwhile (say, a text reply during the call)
             self._set_status(h, Status.NO_ANSWER)
+            self._follow_up(h)
             return
         self._set_status(h, URGENCY_STATUS[decision.urgency])
         for request in decision.help:
+            if decision.urgency is Urgency.P3 and request.kind is ActionType.DISPATCH_CREW:
+                request = HelpRequest(request.kind, request.reason, request.needs_approval, deferred=True)
             self._act(h, result, request)
         if decision.urgency is Urgency.P1:
             self._trigger("a new P1 emergency", {"emergency_lat": h.lat, "emergency_lng": h.lng,
@@ -363,15 +526,25 @@ class Engine:
                                   needs_approval=swapped in (ActionType.DELIVER_GENERATOR, ActionType.HOTEL_VOUCHER))
         kind = request.kind
         cost = COSTS.get(kind, 0.0)
-        if request.needs_approval:
+        if request.needs_approval or cost > self.approval_threshold:
             action = self._add_action(h, kind, ActionStatus.PENDING_APPROVAL, request.reason, cost, True, None)
             self._emit(EventType.APPROVAL_REQUESTED, {
                 "action_id": action.id, "type": kind, "cost": cost, "reason": request.reason,
+                "name": h.name, "address": h.address, "urgency_status": h.status,
                 "text": f"{LABEL.get(kind, kind.value)} for {street} is waiting for approval "
                         f"(${cost:,.0f}): {request.reason}.",
             }, h.id)
             return
         booking: Booking | None = None
+        if request.deferred:  # within a day: on the next-day crew list, not taking a crew now
+            action = self._add_action(h, kind, ActionStatus.SCHEDULED, request.reason, cost, False, None)
+            self.help_at.setdefault(h.id, now)
+            self._emit(EventType.ACTION_CREATED, {
+                "action_id": action.id, "type": kind, "status": action.status, "resource_id": None,
+                "reason": request.reason, "deferred": True,
+                "text": f"Added {street} to the next-day crew list: {request.reason}.",
+            }, h.id)
+            return
         if kind in RESOURCE_FOR:
             booking = self.booker.book(kind, h, now, people=max(result.people, 1))
             if booking is None:  # only shelters fill up
@@ -425,6 +598,8 @@ class Engine:
         if new not in ALLOWED[old]:
             if old in SEVERITY and new in SEVERITY and SEVERITY[new] < SEVERITY[old]:
                 return  # never lower what we already know
+            if (old in REACHED or old is Status.ESCALATED) and new in NOT_REACHED:
+                return  # "not reached" never goes back up
             raise ValueError(f"household {h.id}: {old} -> {new} is not an allowed status change")
         h.status = new
         with self.db.session() as session:
@@ -526,6 +701,10 @@ class Engine:
             session.commit()
 
 
+def _clip_words(text: str, words: int) -> str:
+    return " ".join(text.split()[:words])
+
+
 def _km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     from app.geo import haversine_km
 
@@ -535,7 +714,9 @@ def _km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 def _soon(minutes: int) -> str:
     if minutes <= 1:
         return "now"
-    return f"in about {minutes} min" if minutes < 90 else f"in about {round(minutes / 60)} h"
+    if minutes < 90:
+        return f"in about {minutes} min"
+    return f"in about {round(minutes / 60)} h" if minutes < 36 * 60 else f"in about {round(minutes / 1440)} days"
 
 
 def _describe(kind: ActionType, street: str, reason: str, booking: Booking | None, now: datetime) -> str | None:

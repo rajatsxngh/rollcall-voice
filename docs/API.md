@@ -19,6 +19,10 @@ The backend (`backend/`, FastAPI) and the dashboard (`dashboard/`) meet here. Wh
 | POST | `/reset` | Stops the run, sets every household back to not called, clears needs, actions and calls, frees every resource, emits `run.reset` | M3 |
 | POST | `/debug/emit` | Injects an event (scripts and development only) | M0 |
 | POST | `/vapi/chat/completions`, `/vapi/webhook` | Phone platform (Vapi) | M1 |
+| GET | `/approvals` | Actions waiting for the coordinator (below) | M8 |
+| POST | `/approvals/{action_id}/approve`, `/approvals/{action_id}/reject` | Decide one. Body optional: `{"by": "coordinator"}`. 404 unknown, 409 already decided. Returns the updated approval item | M8 |
+| GET | `/households/{id}` | Everything about one household for the detail panel (below). Never includes the hidden truth | M8 |
+| POST | `/sms/inbound` | Twilio's inbound-text webhook (form fields `From`, `Body`); replies "1", "2", "3" or free text | M8 |
 
 The engine (M3) runs every timer on the run's clock, and **event times follow that clock**: at 60×, an hour of response takes a minute, and the feed's timestamps show response time. Until M6, calls go through a scripted channel that answers from the hidden truth with no AI.
 
@@ -62,6 +66,47 @@ Status `style` values: `solid`, `pulse` (call in progress), `hollow` (no answer 
 - Phone numbers are never sent to the dashboard.
 - Load `/state`, then connect to `/ws?since=<last_event_id>`. On a dropped connection, reconnect with the last event id you saw.
 
+## GET /approvals
+
+```json
+{"approvals": [{"action_id": 77, "household_id": 12, "name": "Maria Lopez", "address": "1412 Oak St, Richardson, TX",
+  "type": "deliver_generator", "cost": 800.0, "reason": "oxygen concentrator needs power",
+  "urgency_status": "urgent", "created_at": "2026-11-07T23:12:00.000Z"}]}
+```
+
+Oldest first, except life-safety first: items whose household is `emergency` or `urgent` come before the rest. Keep the list in sync with `approval.requested` (add) and `approval.decided` (remove) events; reload it on `run.reset`.
+
+## GET /households/{id}
+
+```json
+{"id": 12, "name": "Maria Lopez", "address": "1412 Oak St, Richardson, TX", "lat": 32.95, "lng": -96.71,
+ "status": "urgent", "live": false, "affected": true, "risk_score": 62.0, "wave": 1,
+ "risk_factors": [{"key": "powered_device", "label": "Medical device that needs power", "points": 30.0}],
+ "profile": {"age": 81, "lives_alone": true, "medical_device": "oxygen concentrator", "mobility": null,
+             "has_car": false, "kids_under_5": 0, "language": "en"},
+ "needs": [{"id": 3, "category": "power", "details": "oxygen on battery", "urgency": "P2", "created_at": "..."}],
+ "calls": [{"id": 9, "attempt": 1, "channel": "scripted", "outcome": "completed", "started_at": "...",
+            "ended_at": "...", "summary": "Spoke with Maria: ...", "transcript": [{"role": "agent", "line": "..."}]}],
+ "actions": [{"id": 77, "type": "dispatch_crew", "status": "scheduled", "cost": 150.0, "reason": "...",
+              "needs_approval": false, "resource": "Crew 3", "scheduled_for": "...", "created_at": "..."}],
+ "next_followup": {"step": 2, "channel": "text", "at": "2026-11-07T23:30:00.000Z"}}
+```
+
+`next_followup` is `null` when nothing is scheduled. Phone numbers are never included.
+
+## Follow-up ladder (M8)
+
+A household nobody reached walks these steps on the run's clock. It goes back into the call queue each time, and "not reached" never goes up.
+
+| Step | When | Action |
+|---|---|---|
+| 1 | First call not answered | Call again 10 minutes later |
+| 2 | Still no answer | Text: "Reply 1 safe, 2 need help, 3 emergency" |
+| 3 | No reply 20 minutes later | One last call |
+| 4 | Still nothing | A crew goes for an in-person check; status `escalated`, flagged for the coordinator |
+
+A text reply at any point resolves the household: 1 is safe, 2 sends a crew, 3 hands off to a human dispatcher and sends a crew.
+
 ## Events
 
 Every event has this envelope:
@@ -83,14 +128,19 @@ Events the dashboard uses:
 | `call.ended` | set | `call_id`, `outcome`, `summary`; phone calls add `ended_reason`, `duration_s` |
 | `household.status` | set | `status`, `previous` |
 | `need.recorded` | set | `category`, `details`, `urgency`, `call_id`, `need_id` (null if the household isn't in the database), `text` |
-| `action.created` | set | `action_id`, `type`, `status`, `resource_id`, `reason`, `eta_minutes` (booked help), `text` (not for claims, follow-ups) |
+| `action.created` | set | `action_id`, `type`, `status`, `resource_id`, `reason`, `eta_minutes` (booked help), `deferred` (true: P3 crew visit on the next-day list, no crew taken now), `text` (not for claims, follow-ups) |
 | `action.updated` | set | `action_id`, `status` (e.g. `done` when a crew finishes) |
-| `approval.requested` | set | `action_id`, `type`, `cost`, `reason`, `text` |
+| `approval.requested` | set | `action_id`, `type`, `cost`, `reason`, `name`, `address`, `urgency_status`, `text` |
 | `agent.note` | optional | `text`, optional `reason` (`replan`, `resources_busy`, `model_status`, `no_model`, `restart`), optional `change` (a re-plan), optional `tool` (the in-call tool that wrote it) |
 
-For phone calls, `call_id` is the phone platform's call id (a string). Rows in the `calls` table for phone calls start in M6.
 | `status.update` | null | `text`, `counts` |
+| `followup.scheduled` | set | `step` (1 to 4), `channel` (`call`, `text`, `in_person`), `at` |
+| `sms.sent` | set | `body`, `step` (texts to fake households are logged, never sent) |
+| `sms.received` | set | `body`, `parsed` (`safe`, `needs_help`, `emergency`, `free_text`), `text` |
+| `approval.decided` | set | `action_id`, `type`, `approved` (bool), `by`, `text` |
 | `run.reset` | null | `{}`: reload `/state` |
+
+For phone calls, `call_id` is the phone platform's call id (a string). Rows in the `calls` table for phone calls start in M6.
 
 ## Counters
 

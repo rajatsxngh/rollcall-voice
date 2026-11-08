@@ -1,8 +1,7 @@
 import type { GeoJsonObject } from 'geojson'
 import L from 'leaflet'
 import { useEffect, useRef } from 'react'
-import { GeoJSON, MapContainer, Popup, TileLayer, ZoomControl, useMap } from 'react-leaflet'
-import { StatusDot } from '../components/StatusDot'
+import { CircleMarker, GeoJSON, MapContainer, TileLayer, ZoomControl, useMap } from 'react-leaflet'
 import { fmtInt } from '../lib/format'
 import { THEMES, TILE_ATTRIBUTION, type Theme } from '../lib/theme'
 import { store, useRunSnapshot } from '../live'
@@ -45,7 +44,7 @@ export function MapView({ theme }: { theme: Theme }) {
         )}
         <Households outline={colors.dotOutline} />
         <FitToCity />
-        <SelectedHousehold />
+        <SelectedHousehold color={colors.accent} />
       </MapContainer>
 
       {snap.meta && snap.ready && <Legend snap={snap} accent={colors.accent} />}
@@ -90,52 +89,22 @@ function FitToCity() {
 }
 
 /**
- * Popup for the clicked dot. M8 replaces this with the household detail panel: the selection
- * already lives in the store (store.select / snapshot.selectedId).
+ * Marks the clicked dot with a ring; its details open in the household panel
+ * (panels/HouseholdDetail.tsx) from snapshot.selectedId.
  */
-function SelectedHousehold() {
+function SelectedHousehold({ color }: { color: string }) {
   const snap = useRunSnapshot()
   const id = snap.selectedId
   const h = id != null ? store.households.get(id) : undefined
   if (id == null || !h) return null
-  const s = store.statusOf(h.status)
   return (
-    <Popup
+    <CircleMarker
       key={id}
-      position={[h.lat, h.lng]}
-      offset={[0, -2]}
-      eventHandlers={{ remove: () => store.deselect(id) }}
-    >
-      <div className="min-w-[220px]">
-        <div className="text-[15px] font-semibold leading-snug text-ink">{h.name}</div>
-        <div className="mt-0.5 text-[13px] text-muted">{h.address}</div>
-        <div className="mt-3 flex items-center gap-2 text-[14px] font-medium text-ink">
-          <StatusDot status={s} ringColor={store.ringColor} size={10} />
-          {s.label}
-        </div>
-        <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[13px]">
-          <dt className="text-muted">Risk score</dt>
-          <dd className="font-medium tabular-nums text-ink">
-            {Math.round(h.risk_score)}
-            <span className="font-normal text-faint"> / 100</span>
-          </dd>
-          {h.wave != null && (
-            <>
-              <dt className="text-muted">Call wave</dt>
-              <dd className="font-medium tabular-nums text-ink">{h.wave}</dd>
-            </>
-          )}
-          <dt className="text-muted">Warning area</dt>
-          <dd className="font-medium text-ink">{h.affected ? 'Inside' : 'Outside'}</dd>
-          {h.live && (
-            <>
-              <dt className="text-muted">Phone</dt>
-              <dd className="font-medium text-ink">Real call (demo)</dd>
-            </>
-          )}
-        </dl>
-      </div>
-    </Popup>
+      center={[h.lat, h.lng]}
+      radius={11}
+      interactive={false}
+      pathOptions={{ color, weight: 3, opacity: 1, fill: false }}
+    />
   )
 }
 

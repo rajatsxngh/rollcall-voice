@@ -1,5 +1,21 @@
-import type { StreamHandlers, Transport } from '../api/transport'
-import type { AreaGeometry, Household, Meta, RunEvent, RunState, WarningArea } from '../api/types'
+import { ApiError, type StreamHandlers, type Transport } from '../api/transport'
+import type {
+  ApprovalItem,
+  AreaGeometry,
+  FollowUp,
+  Household,
+  HouseholdAction,
+  HouseholdCall,
+  HouseholdDetail,
+  HouseholdNeed,
+  HouseholdProfile,
+  Meta,
+  RiskFactor,
+  RunEvent,
+  RunState,
+  TranscriptLine,
+  WarningArea,
+} from '../api/types'
 import { computeCounts } from '../store/runStore'
 
 /*
@@ -87,6 +103,53 @@ const URGENCY: Record<Outcome, string> = { emergency: 'P1', urgent: 'P2', needs_
 
 const LINES = 60
 const TICK_MS = 100
+const MIN = 60_000
+const COST: Record<string, number> = { deliver_generator: 800, hotel_voucher: 180, dispatch_crew: 150, in_person_check: 150 }
+const DEVICES = ['oxygen concentrator', 'CPAP machine', 'power wheelchair', 'home dialysis']
+const MOBILITY = ['uses a wheelchair', 'uses a walker', 'bedbound']
+const LANGS = ['en', 'en', 'en', 'en', 'en', 'es', 'es', 'vi', 'zh', 'ko']
+
+/** The profile and risk factors behind a fixture household's score (own RNG, so the city layout is unchanged). */
+function makeProfile(rand: () => number): { profile: HouseholdProfile; factors: RiskFactor[] } {
+  const age = 18 + Math.floor(Math.pow(rand(), 0.8) * 80)
+  const profile: HouseholdProfile = {
+    age,
+    lives_alone: rand() < (age > 70 ? 0.55 : 0.25),
+    medical_device: rand() < (age > 70 ? 0.3 : 0.06) ? DEVICES[Math.floor(rand() * DEVICES.length)] : null,
+    mobility: rand() < (age > 75 ? 0.35 : 0.05) ? MOBILITY[Math.floor(rand() * MOBILITY.length)] : null,
+    has_car: rand() > (age > 80 ? 0.6 : 0.15),
+    kids_under_5: age < 45 && rand() < 0.3 ? 1 + Math.floor(rand() * 2) : 0,
+    language: LANGS[Math.floor(rand() * LANGS.length)],
+  }
+  const factors: RiskFactor[] = []
+  if (profile.medical_device) factors.push({ key: 'powered_device', label: 'Medical device that needs power', points: 30 })
+  if (age >= 75) factors.push({ key: 'age_75_plus', label: 'Age 75 or older', points: 20 })
+  else if (age >= 65) factors.push({ key: 'age_65_plus', label: 'Age 65 or older', points: 12 })
+  if (profile.lives_alone) factors.push({ key: 'lives_alone', label: 'Lives alone', points: 15 })
+  if (profile.mobility) factors.push({ key: 'mobility', label: 'Limited mobility', points: 15 })
+  if (!profile.has_car) factors.push({ key: 'no_car', label: 'No car to leave', points: 10 })
+  if (profile.kids_under_5) factors.push({ key: 'kids_under_5', label: 'Children under 5', points: 8 })
+  if (profile.language !== 'en') factors.push({ key: 'language', label: 'Prefers a language other than English', points: 5 })
+  return { profile, factors }
+}
+
+function transcriptFor(name: string, outcome: Outcome | 'safe', details: string): TranscriptLine[] {
+  const first = name.split(' ')[0]
+  const lines: TranscriptLine[] = [
+    { role: 'agent', line: `Hi, this is RollCall with the city of Richardson. Is this ${first}?` },
+    { role: 'resident', line: 'Yes, this is me.' },
+    { role: 'agent', line: 'There is a tornado warning for your area. Are you safe right now?' },
+  ]
+  if (outcome === 'safe') {
+    lines.push({ role: 'resident', line: "We're fine, we're in the hallway." }, { role: 'agent', line: 'Good. Stay inside until the warning ends.' })
+  } else {
+    lines.push(
+      { role: 'resident', line: `Not really. ${details[0].toUpperCase()}${details.slice(1)}.` },
+      { role: 'agent', line: outcome === 'emergency' ? 'Please call 911 now. I am connecting you to a dispatcher.' : "I'm sending help. Stay where you are." },
+    )
+  }
+  return lines
+}
 
 function mulberry32(seed: number): () => number {
   return () => {
@@ -141,6 +204,31 @@ export function fixtureTransport(): Transport {
   }
   const byId = new Map(households.map((h) => [h.id, h]))
 
+  // M8: the detail behind each household, the follow-up ladder and the approvals queue.
+  const prand = mulberry32(7)
+  const profiles = new Map<number, { profile: HouseholdProfile; factors: RiskFactor[] }>()
+  const neverAnswers = new Set<number>()
+  for (const h of households) {
+    const p = makeProfile(prand)
+    profiles.set(h.id, p)
+    h.risk_score = Math.min(100, p.factors.reduce((n, f) => n + f.points, 0) + Math.round(prand() * 80) / 10)
+    if (prand() < 0.025) neverAnswers.add(h.id)
+  }
+  const needsOf = new Map<number, HouseholdNeed[]>()
+  const callsOf = new Map<number, HouseholdCall[]>()
+  const actionsOf = new Map<number, HouseholdAction[]>()
+  const followups = new Map<number, FollowUp>()
+  const pending = new Map<number, ApprovalItem>()
+  const actionHome = new Map<number, number>()
+  let later: { at: number; h: Household }[] = []
+  let needSeq = 0
+  const push = <T,>(map: Map<number, T[]>, id: number, item: T) => {
+    const list = map.get(id)
+    if (list) list.push(item)
+    else map.set(id, [item])
+  }
+  const iso = () => new Date(clock).toISOString()
+
   const subs = new Set<StreamHandlers>()
   const log: RunEvent[] = []
   let nextId = 1
@@ -170,32 +258,89 @@ export function fixtureTransport(): Transport {
     emit('household.status', h.id, { status, previous })
   }
 
-  function act(h: Household, type: string, text: string, reason: string): void {
+  function act(h: Household, type: string, text: string, reason: string, resource: string | null = null): number {
     helped.add(h.id)
-    emit('action.created', h.id, { action_id: ++actionSeq, type, status: 'scheduled', resource_id: null, reason, text })
+    const id = ++actionSeq
+    actionHome.set(id, h.id)
+    push(actionsOf, h.id, {
+      id,
+      type,
+      status: 'scheduled',
+      cost: COST[type] ?? null,
+      reason,
+      needs_approval: false,
+      resource,
+      scheduled_for: new Date(clock + 20 * MIN).toISOString(),
+      created_at: iso(),
+    })
+    emit('action.created', h.id, { action_id: id, type, status: 'scheduled', resource_id: null, reason, text })
+    return id
+  }
+
+  /** A generator or hotel voucher: waits in the coordinator's queue. */
+  function askApproval(h: Household, type: 'deliver_generator' | 'hotel_voucher', reason: string): void {
+    const id = ++actionSeq
+    const cost = COST[type]
+    actionHome.set(id, h.id)
+    push(actionsOf, h.id, { id, type, status: 'pending_approval', cost, reason, needs_approval: true, resource: null, scheduled_for: null, created_at: iso() })
+    pending.set(id, {
+      action_id: id,
+      household_id: h.id,
+      name: h.name,
+      address: h.address,
+      type,
+      cost,
+      reason,
+      urgency_status: h.status,
+      created_at: iso(),
+    })
+    const what = type === 'deliver_generator' ? 'a generator' : 'a hotel voucher'
+    emit('approval.requested', h.id, { action_id: id, type, cost, reason, text: `Waiting for approval: ${what} for ${street(h)} ($${cost}), ${reason}.` })
+  }
+
+  function scheduleFollowUp(h: Household, step: number, channel: string, delayMs: number): void {
+    const f = { step, channel, at: new Date(clock + delayMs).toISOString() }
+    followups.set(h.id, f)
+    emit('followup.scheduled', h.id, f)
+    if (channel === 'call') later.push({ at: clock + delayMs, h })
   }
 
   function finish(call: { id: number; h: Household; attempt: number }): void {
     const { h } = call
-    if (rand() < 0.1) {
+    const record = callsOf.get(h.id)?.find((c) => c.id === call.id)
+    if (record) record.ended_at = iso()
+    followups.delete(h.id)
+    if (neverAnswers.has(h.id) || rand() < 0.1) {
+      if (record) Object.assign(record, { outcome: 'no_answer', summary: 'No answer.' })
       emit('call.ended', h.id, { call_id: call.id, outcome: 'no_answer', summary: 'No answer' })
-      if (call.attempt >= 2) {
-        setStatus(h, 'escalated')
-        act(h, 'in_person_check', `No answer twice at ${street(h)}: sending a crew for an in-person check.`, 'no answer')
-      } else {
+      if (call.attempt === 1) {
         setStatus(h, 'no_answer')
-        queue.push(h)
+        scheduleFollowUp(h, 1, 'call', 10 * MIN)
+      } else if (call.attempt === 2) {
+        setStatus(h, 'no_answer')
+        emit('sms.sent', h.id, { body: 'RollCall: tornado warning. Reply 1 safe, 2 need help, 3 emergency.', step: 2 })
+        scheduleFollowUp(h, 3, 'call', 20 * MIN)
+      } else {
+        setStatus(h, 'escalated')
+        emit('followup.scheduled', h.id, { step: 4, channel: 'in_person', at: iso() })
+        const crew = `Crew ${1 + Math.floor(rand() * 6)}`
+        act(h, 'in_person_check', `No answer to two calls and a text at ${street(h)}: sending ${crew} for an in-person check.`, 'no answer after the follow-up ladder', crew)
       }
       return
     }
     const u = rand()
     const outcome: Outcome | 'safe' = u < 0.03 ? 'emergency' : u < 0.08 ? 'urgent' : u < 0.27 ? 'needs_help' : 'safe'
-    emit('call.ended', h.id, { call_id: call.id, outcome: 'completed', summary: '' })
+    const first = h.name.split(' ')[0]
     if (outcome === 'safe') {
+      if (record) Object.assign(record, { outcome: 'completed', summary: `Spoke with ${first}: safe at home.`, transcript: transcriptFor(h.name, 'safe', '') })
+      emit('call.ended', h.id, { call_id: call.id, outcome: 'completed', summary: '' })
       setStatus(h, 'safe')
       return
     }
     const need = pick(NEEDS[outcome])
+    if (record) Object.assign(record, { outcome: 'completed', summary: `Spoke with ${first}: ${need.details}.`, transcript: transcriptFor(h.name, outcome, need.details) })
+    emit('call.ended', h.id, { call_id: call.id, outcome: 'completed', summary: '' })
+    push(needsOf, h.id, { id: ++needSeq, ...need, urgency: URGENCY[outcome], created_at: iso() })
     emit('need.recorded', h.id, {
       ...need,
       urgency: URGENCY[outcome],
@@ -205,11 +350,15 @@ export function fixtureTransport(): Transport {
     if (outcome === 'emergency') {
       act(h, 'transfer_to_human', `Told ${h.name} to call 911 and handed the call to a dispatcher.`, need.details)
     } else if (outcome === 'urgent') {
-      act(h, 'dispatch_crew', `Sent Crew ${1 + Math.floor(rand() * 6)} to ${street(h)}: ${need.details}.`, need.details)
+      const crew = `Crew ${1 + Math.floor(rand() * 6)}`
+      act(h, 'dispatch_crew', `Sent ${crew} to ${street(h)}: ${need.details}.`, need.details, crew)
+      if (need.category === 'power' && rand() < 0.4) askApproval(h, 'deliver_generator', 'oxygen concentrator needs power')
+    } else if (need.category === 'shelter' && rand() < 0.35) {
+      askApproval(h, 'hotel_voucher', 'no power and nowhere warm to sleep tonight')
     } else if (rand() < 0.6) {
-      act(h, 'schedule_adjuster', `Booked an adjuster for ${street(h)} tomorrow morning.`, need.details)
+      act(h, 'schedule_adjuster', `Booked an adjuster for ${street(h)} tomorrow morning.`, need.details, 'Adjuster 2')
     } else {
-      act(h, 'reserve_shelter_bed', `Reserved a shelter bed at Richardson High for ${h.name}.`, need.details)
+      act(h, 'reserve_shelter_bed', `Reserved a shelter bed at Richardson High for ${h.name}.`, need.details, 'Richardson High shelter')
     }
   }
 
@@ -220,12 +369,20 @@ export function fixtureTransport(): Transport {
       finish(call)
       return false
     })
+    if (later.length) {
+      const due = later.filter((x) => x.at <= clock)
+      if (due.length) {
+        later = later.filter((x) => x.at > clock)
+        queue.unshift(...due.map((x) => x.h))
+      }
+    }
     while (active.length < LINES && queue.length) {
       const h = queue.shift()!
       const attempt = (attempts.get(h.id) ?? 0) + 1
       attempts.set(h.id, attempt)
       const call = { id: ++callSeq, h, attempt, endAt: clock + (40 + rand() * 140) * 1000 }
       active.push(call)
+      push(callsOf, h.id, { id: call.id, attempt, channel: 'scripted', outcome: null, started_at: iso(), ended_at: null, summary: null, transcript: [] })
       emit('call.started', h.id, { call_id: call.id, channel: 'scripted', attempt })
       setStatus(h, 'calling')
     }
@@ -237,7 +394,7 @@ export function fixtureTransport(): Transport {
         text: `Update: ${c.reached} of ${c.affected} homes reached, ${c.urgent} urgent, help sent to ${c.help_sent}. ${c.not_reached} not reached yet.`,
       })
     }
-    if (!queue.length && !active.length && loop) {
+    if (!queue.length && !active.length && !later.length && loop) {
       clearInterval(loop)
       loop = null
       emit('agent.note', null, { text: `Every home in the warning area has been called. ${counts().not_reached} still need a follow-up.` })
@@ -280,6 +437,13 @@ export function fixtureTransport(): Transport {
     queue = []
     active = []
     attempts.clear()
+    later = []
+    needsOf.clear()
+    callsOf.clear()
+    actionsOf.clear()
+    followups.clear()
+    pending.clear()
+    actionHome.clear()
     helped = new Set()
     warning = null
     households.forEach((h) => {
@@ -292,8 +456,61 @@ export function fixtureTransport(): Transport {
     return { ok: true }
   }
 
+  async function decideApproval(actionId: number, approve: boolean): Promise<ApprovalItem> {
+    const item = pending.get(actionId)
+    if (!item) {
+      if (actionHome.has(actionId)) throw new ApiError(409, 'already decided')
+      throw new ApiError(404, 'no such action')
+    }
+    pending.delete(actionId)
+    const h = byId.get(item.household_id)!
+    const action = actionsOf.get(h.id)?.find((a) => a.id === actionId)
+    const what = item.type === 'deliver_generator' ? 'generator' : 'hotel voucher'
+    if (action) action.status = approve ? 'scheduled' : 'rejected'
+    emit('approval.decided', h.id, {
+      action_id: actionId,
+      type: item.type,
+      approved: approve,
+      by: 'coordinator',
+      text: `${approve ? 'Approved' : 'Rejected'} the ${what} for ${street(h)}.`,
+    })
+    if (approve) {
+      if (action) {
+        action.resource = item.type === 'deliver_generator' ? 'Generator 1' : 'Hyatt Regency Richardson'
+        action.scheduled_for = new Date(clock + 45 * MIN).toISOString()
+      }
+      helped.add(h.id)
+      emit('action.updated', h.id, { action_id: actionId, status: 'scheduled' })
+    } else {
+      act(h, 'reserve_shelter_bed', `Instead of a ${what}, reserved a shelter bed at Richardson High for ${h.name}.`, `${what} rejected by the coordinator`, 'Richardson High shelter')
+    }
+    return { ...item }
+  }
+
+  function getHousehold(id: number): HouseholdDetail {
+    const h = byId.get(id)
+    if (!h) throw new ApiError(404, 'no such household')
+    const p = profiles.get(id)!
+    return {
+      ...h,
+      risk_factors: p.factors,
+      profile: p.profile,
+      needs: [...(needsOf.get(id) ?? [])],
+      calls: (callsOf.get(id) ?? []).map((c) => ({ ...c, transcript: [...(c.transcript ?? [])] })),
+      actions: (actionsOf.get(id) ?? []).map((a) => ({ ...a })),
+      next_followup: followups.get(id) ?? null,
+    }
+  }
+
+  const lifeSafety = (a: ApprovalItem) => Number(a.urgency_status === 'emergency' || a.urgency_status === 'urgent')
+
   return {
     label: 'local fixture',
+    getApprovals: async () => ({
+      approvals: [...pending.values()].sort((a, b) => lifeSafety(b) - lifeSafety(a) || a.action_id - b.action_id),
+    }),
+    decideApproval,
+    getHousehold: async (id) => getHousehold(id),
     getMeta: async () => META,
     getState: async (): Promise<RunState> => ({
       time: new Date(clock).toISOString(),

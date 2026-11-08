@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     data_dir: Path = REPO_ROOT / "data"
     display_tz: str = "America/Chicago"
     debug_endpoints: bool = True
+    approval_threshold: float = 500.0  # dollars; costlier actions wait for the coordinator (M8)
 
     @property
     def nvidia_keys(self) -> list[str]:

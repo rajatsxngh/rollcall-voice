@@ -26,6 +26,19 @@ export function formatTime(iso: string | null | undefined, tz: string, withSecon
   return Number.isNaN(d.getTime()) ? '' : formatter(tz, withSeconds).format(d)
 }
 
+/** Like formatTime without seconds, with the weekday when `iso` falls on another day than `ref` (run time). */
+export function formatWhen(iso: string | null | undefined, tz: string, ref: string | null | undefined): string {
+  const time = formatTime(iso, tz, false)
+  if (!time || !iso || !ref) return time
+  try {
+    const day = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short', month: 'numeric', day: 'numeric' })
+    const a = day.format(new Date(iso))
+    return a === day.format(new Date(ref)) ? time : `${a.split(',')[0]} ${time}`
+  } catch {
+    return time
+  }
+}
+
 /** Short zone name for a moment, e.g. "CST" or "CDT". */
 export function zoneAbbrev(tz: string, iso?: string | null): string {
   try {
