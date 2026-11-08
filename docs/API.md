@@ -23,6 +23,9 @@ The backend (`backend/`, FastAPI) and the dashboard (`dashboard/`) meet here. Wh
 | POST | `/approvals/{action_id}/approve`, `/approvals/{action_id}/reject` | Decide one. Body optional: `{"by": "coordinator"}`. 404 unknown, 409 already decided. Returns the updated approval item | M8 |
 | GET | `/households/{id}` | Everything about one household for the detail panel (below). Never includes the hidden truth | M8 |
 | GET | `/results` | The latest evaluation (below), written by `scripts.run_eval`. 404 until one exists | M9 |
+| GET | `/recordings` | Saved runs (M10 backup) | M10 |
+| POST | `/recordings/save?name=<n>` | Save the latest run's events as a recording | M10 |
+| POST | `/recordings/{name}/play?speed=<x>` | Reset, then replay a recording (events re-emitted with their original spacing ÷ speed); no models, phones or internet needed | M10 |
 | POST | `/sms/inbound` | Twilio's inbound-text webhook (form fields `From`, `Body`); replies "1", "2", "3" or free text | M8 |
 
 The engine (M3) runs every timer on the run's clock, and **event times follow that clock**: at 60×, an hour of response takes a minute, and the feed's timestamps show response time. Until M6, calls go through a scripted channel that answers from the hidden truth with no AI.

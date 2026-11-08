@@ -1,6 +1,6 @@
 # RollCall results
 
-Generated 2026-11-08T00:25:22.268Z. Calls: **scripted**; decisions: **rules**; 20 phone lines.
+Generated 2026-11-08T00:35:57.609Z. Calls: **scripted**; decisions: **rules**; 20 phone lines.
 
 | | RollCall (risk-ranked) | List order |
 |---|---|---|

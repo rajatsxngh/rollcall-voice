@@ -354,6 +354,8 @@ Build:
 
 Done when:
 
+*Prep done (no keys needed): `scripts.preflight` (checks keys, models, tunnel, Vapi, Twilio, data, ports; optional test call), `scripts.demo_caller` (puts the consenting demo phone on the demo home, wave 1), record and replay of a good run (`/recordings/save`, `/recordings/{name}/play`; works offline), the final README with an architecture diagram, and the runbook in [docs/DEMO.md](docs/DEMO.md). At 30× the city resolves in about 2 minutes. Still to do: the video, screenshots, Devpost, rehearsals.*
+
 - [ ] Preflight passes.
 - [ ] Ten clean rehearsals.
 - [ ] The replay backup works offline.
