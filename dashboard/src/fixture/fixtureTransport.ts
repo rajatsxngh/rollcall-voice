@@ -1,4 +1,5 @@
 import { ApiError, type StreamHandlers, type Transport } from '../api/transport'
+import { fixtureResults } from './fixtureResults'
 import type {
   ApprovalItem,
   AreaGeometry,
@@ -511,6 +512,11 @@ export function fixtureTransport(): Transport {
     }),
     decideApproval,
     getHousehold: async (id) => getHousehold(id),
+    getResults: async () => {
+      const results = fixtureResults(new URLSearchParams(window.location.search).get('fixture'))
+      if (!results) throw new ApiError(404, 'GET /results failed (404): no results yet')
+      return results
+    },
     getMeta: async () => META,
     getState: async (): Promise<RunState> => ({
       time: new Date(clock).toISOString(),

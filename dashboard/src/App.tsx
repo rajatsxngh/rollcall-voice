@@ -8,9 +8,13 @@ import { CountersPanel } from './panels/CountersPanel'
 import { FeedPanel } from './panels/FeedPanel'
 import { HouseholdDetailPanel } from './panels/HouseholdDetail'
 import { QueuePanel } from './panels/QueuePanel'
+import { ResultsView } from './results/ResultsView'
+
+export type View = 'live' | 'results'
 
 export default function App() {
   const [theme, setTheme] = usePersistentState<Theme>('rc.theme', 'dark')
+  const [view, setView] = usePersistentState<View>('rc.view', 'live')
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -23,8 +27,14 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-bg text-ink">
-      <TopBar theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
-      <LiveView theme={theme} />
+      <TopBar
+        theme={theme}
+        onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        view={view}
+        onView={setView}
+      />
+      {/* The live sync keeps running in Results, so switching back shows the run as it is now. */}
+      {view === 'results' ? <ResultsView /> : <LiveView theme={theme} />}
     </div>
   )
 }
@@ -35,7 +45,8 @@ export default function App() {
  * - M6: a live call transcript panel and the P1 handoff card, between counters and feed.
  * - M8: the approvals / escalations panel (QueuePanel) between counters and feed, and the
  *   household detail card over the left of the map, opened by store.select(id).
- * - M9: a results / test-mode view rendered in place of <LiveView />, switched from the top bar.
+ * - M9: the results / test-mode view (results/ResultsView) renders in place of <LiveView />,
+ *   switched from the top bar.
  */
 function LiveView({ theme }: { theme: Theme }) {
   return (

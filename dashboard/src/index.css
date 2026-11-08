@@ -17,6 +17,7 @@
   --faint: #6d7684;
   --accent: #a78bfa;
   --accent-ink: #150b2e;
+  --bad: #f87171;
   --map-bg: #0e0f11;
 }
 
@@ -31,6 +32,7 @@
   --faint: #8a93a1;
   --accent: #7c3aed;
   --accent-ink: #ffffff;
+  --bad: #dc2626;
   --map-bg: #e8eaed;
 }
 
@@ -47,6 +49,8 @@
   --color-faint: var(--faint);
   --color-accent: var(--accent);
   --color-accent-ink: var(--accent-ink);
+  /* M9 results only: a failed target or trap, a verdict less urgent than the truth. */
+  --color-bad: var(--bad);
   --font-sans: 'Inter', ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
 }
 

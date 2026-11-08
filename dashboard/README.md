@@ -21,9 +21,11 @@ $env:VITE_API_BASE="http://127.0.0.1:8010"; npm run dev   # PowerShell
 
 Pick a speed (1×, 10×, 30×, 60×), click **Tornado warning**, and **Reset** to start over. The connection indicator sits at the top right; the light/dark toggle is next to it.
 
-Other commands: `npm run build` (type-check and production build into `dist/`), `npm test` (counter and event-handling tests), `npm run preview`.
+Other commands: `npm run build` (type-check and production build into `dist/`), `npm test` (counter, event-handling and results-formatting tests), `npm run preview`.
 
 No backend? `http://127.0.0.1:5173/?fixture` fakes a city and a run in the browser, for UI work only. The header then says FIXTURE DATA.
+
+**Results (M9 test mode):** the **Live / Results** switch in the top bar shows `GET /results`: RollCall vs list order (median, p90 and every-urgent-home minutes with the ratio), the curve of urgent homes with help over time, the trap case side by side, the trap report, keywords vs Nemotron, reply delay and the PRD targets, each with its source and the run's notes. Build the results with `cd backend; uv run python -m scripts.run_eval`. With the fixture: `?fixture` (simulated, with a trap case), `?fixture=scripted` (no traps), `?fixture=noresults` (404).
 
 ## How it works
 
@@ -41,13 +43,14 @@ src/
   store/       run state, event handling, counters (and their tests)
   map/         Leaflet map, canvas household layer, legend, dot popup
   panels/      sidebar panels: counters, agent feed
-  components/  top bar (controls, connection), status dot
-  fixture/     fake backend behind ?fixture
+  components/  top bar (Live/Results switch, controls, connection), status dot
+  results/     M9 results view, curve chart, formatting and chart math (and their tests)
+  fixture/     fake backend behind ?fixture (fixtureResults.ts: a fake GET /results)
 ```
 
 - **M6** live call transcript and P1 handoff card: new `<Panel>`s in the sidebar (`LiveView` in `App.tsx`), fed by `store.onEvent` (for example `call.transcript`).
 - **M8** approvals queue: another sidebar panel. Household detail: clicking a dot already calls `store.select(id)`; render a panel from `snapshot.selectedId` in place of the popup in `map/MapView.tsx`.
-- **M9** results / test mode: a second view rendered in place of `LiveView`.
+- **M9** results / test mode: `results/ResultsView.tsx`, rendered in place of `LiveView` (the live sync keeps running behind it).
 
 ## Basemap
 

@@ -58,3 +58,18 @@ def meta(request: Request) -> dict[str, Any]:
         "action_types": [a.value for a in ActionType],
         "help_action_types": sorted(a.value for a in HELP_ACTIONS),
     }
+
+
+@router.get("/results")
+def results(request: Request) -> Any:
+    """The latest evaluation (scripts.run_eval writes results/latest.json)."""
+    import json
+
+    from fastapi import HTTPException
+
+    from app.config import REPO_ROOT
+
+    path = getattr(request.app.state, "results_path", None) or REPO_ROOT / "results" / "latest.json"
+    if not path.exists():
+        raise HTTPException(404, "No results yet. Run: cd backend; uv run python -m scripts.run_eval")
+    return json.loads(path.read_text(encoding="utf-8"))

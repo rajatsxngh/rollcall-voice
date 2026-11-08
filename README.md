@@ -36,6 +36,7 @@ Checks, run from `backend/`:
 uv run pytest                                  # unit tests; no network or keys needed
 uv run python -m scripts.inspect_city          # urgency mix, traps, risk ranking vs list order
 uv run python -m scripts.run_sim --compare     # whole city on a simulated clock, both call orders
+uv run python -m scripts.run_eval              # M9 results vs list order -> results/latest.json, RESULTS.md
 uv run python -m scripts.sim_calls --traps --dry-run   # M7 simulator (needs keys without --dry-run)
 uv run python -m scripts.smoke_llm             # Nemotron answers, with time to first token
 uv run python -m scripts.smoke_llm --list-models

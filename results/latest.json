@@ -1,0 +1,528 @@
+{
+  "generated_at": "2026-11-08T00:22:59.347Z",
+  "source": {
+    "calls": "scripted",
+    "simulated_households": 0,
+    "scripted_households": 1365,
+    "triage": "rules",
+    "lines": 100,
+    "seed": 42,
+    "spec_hash": "f84b4dc45a6e",
+    "voice_model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "resident_model": "nvidia/nemotron-nano-3-30b-a3b",
+    "tokens_per_household": null
+  },
+  "runs": {
+    "risk_ranked": {
+      "affected": 1365,
+      "calls": 1709,
+      "coverage_pct": 100.0,
+      "true_urgent": 116,
+      "urgent_found": 106,
+      "urgent_found_pct": 91.4,
+      "flagged_urgent": 106,
+      "false_alarms": 0,
+      "false_alarm_pct": 0.0,
+      "true_urgent_helped": 116,
+      "median_minutes_to_help": 3.2,
+      "p90_minutes_to_help": 23.2,
+      "minutes_until_all_urgent_helped": 52.3,
+      "avg_call_minutes": 1.76,
+      "minutes_total": 54.1,
+      "curve": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          33
+        ],
+        [
+          3,
+          56
+        ],
+        [
+          4,
+          62
+        ],
+        [
+          5,
+          65
+        ],
+        [
+          6,
+          66
+        ],
+        [
+          7,
+          69
+        ],
+        [
+          8,
+          71
+        ],
+        [
+          9,
+          72
+        ],
+        [
+          10,
+          74
+        ],
+        [
+          11,
+          77
+        ],
+        [
+          12,
+          78
+        ],
+        [
+          13,
+          82
+        ],
+        [
+          14,
+          89
+        ],
+        [
+          15,
+          90
+        ],
+        [
+          16,
+          91
+        ],
+        [
+          17,
+          91
+        ],
+        [
+          18,
+          92
+        ],
+        [
+          19,
+          94
+        ],
+        [
+          20,
+          98
+        ],
+        [
+          21,
+          103
+        ],
+        [
+          22,
+          104
+        ],
+        [
+          23,
+          104
+        ],
+        [
+          24,
+          106
+        ],
+        [
+          25,
+          106
+        ],
+        [
+          26,
+          107
+        ],
+        [
+          27,
+          107
+        ],
+        [
+          28,
+          107
+        ],
+        [
+          29,
+          108
+        ],
+        [
+          30,
+          108
+        ],
+        [
+          31,
+          108
+        ],
+        [
+          32,
+          112
+        ],
+        [
+          33,
+          113
+        ],
+        [
+          34,
+          113
+        ],
+        [
+          35,
+          113
+        ],
+        [
+          36,
+          113
+        ],
+        [
+          37,
+          113
+        ],
+        [
+          38,
+          113
+        ],
+        [
+          39,
+          113
+        ],
+        [
+          40,
+          113
+        ],
+        [
+          41,
+          113
+        ],
+        [
+          42,
+          114
+        ],
+        [
+          43,
+          114
+        ],
+        [
+          44,
+          114
+        ],
+        [
+          45,
+          114
+        ],
+        [
+          46,
+          114
+        ],
+        [
+          47,
+          114
+        ],
+        [
+          48,
+          114
+        ],
+        [
+          49,
+          114
+        ],
+        [
+          50,
+          114
+        ],
+        [
+          51,
+          114
+        ],
+        [
+          52,
+          115
+        ],
+        [
+          53,
+          116
+        ]
+      ]
+    },
+    "list_order": {
+      "affected": 1365,
+      "calls": 1709,
+      "coverage_pct": 100.0,
+      "true_urgent": 116,
+      "urgent_found": 106,
+      "urgent_found_pct": 91.4,
+      "flagged_urgent": 106,
+      "false_alarms": 0,
+      "false_alarm_pct": 0.0,
+      "true_urgent_helped": 116,
+      "median_minutes_to_help": 14.3,
+      "p90_minutes_to_help": 28.0,
+      "minutes_until_all_urgent_helped": 50.2,
+      "avg_call_minutes": 1.76,
+      "minutes_total": 54.3,
+      "curve": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          4
+        ],
+        [
+          3,
+          8
+        ],
+        [
+          4,
+          14
+        ],
+        [
+          5,
+          20
+        ],
+        [
+          6,
+          22
+        ],
+        [
+          7,
+          25
+        ],
+        [
+          8,
+          31
+        ],
+        [
+          9,
+          34
+        ],
+        [
+          10,
+          40
+        ],
+        [
+          11,
+          43
+        ],
+        [
+          12,
+          46
+        ],
+        [
+          13,
+          49
+        ],
+        [
+          14,
+          56
+        ],
+        [
+          15,
+          61
+        ],
+        [
+          16,
+          72
+        ],
+        [
+          17,
+          74
+        ],
+        [
+          18,
+          77
+        ],
+        [
+          19,
+          82
+        ],
+        [
+          20,
+          88
+        ],
+        [
+          21,
+          94
+        ],
+        [
+          22,
+          98
+        ],
+        [
+          23,
+          99
+        ],
+        [
+          24,
+          101
+        ],
+        [
+          25,
+          102
+        ],
+        [
+          26,
+          104
+        ],
+        [
+          27,
+          104
+        ],
+        [
+          28,
+          104
+        ],
+        [
+          29,
+          106
+        ],
+        [
+          30,
+          106
+        ],
+        [
+          31,
+          106
+        ],
+        [
+          32,
+          107
+        ],
+        [
+          33,
+          108
+        ],
+        [
+          34,
+          108
+        ],
+        [
+          35,
+          109
+        ],
+        [
+          36,
+          109
+        ],
+        [
+          37,
+          109
+        ],
+        [
+          38,
+          110
+        ],
+        [
+          39,
+          110
+        ],
+        [
+          40,
+          110
+        ],
+        [
+          41,
+          112
+        ],
+        [
+          42,
+          113
+        ],
+        [
+          43,
+          114
+        ],
+        [
+          44,
+          115
+        ],
+        [
+          45,
+          115
+        ],
+        [
+          46,
+          115
+        ],
+        [
+          47,
+          115
+        ],
+        [
+          48,
+          115
+        ],
+        [
+          49,
+          115
+        ],
+        [
+          50,
+          115
+        ],
+        [
+          51,
+          116
+        ],
+        [
+          52,
+          116
+        ],
+        [
+          53,
+          116
+        ]
+      ]
+    }
+  },
+  "speedup": {
+    "median": 4.5,
+    "p90": 1.2,
+    "all": 1.0
+  },
+  "triage_compare": null,
+  "traps": [],
+  "trap_case": null,
+  "latency": null,
+  "targets": [
+    {
+      "name": "Urgent households found (P1+P2)",
+      "target": ">= 95%",
+      "value": "91.4%",
+      "met": false
+    },
+    {
+      "name": "Time until urgent homes have help",
+      "target": "much faster than list order",
+      "value": "median 4.5x faster",
+      "met": true
+    },
+    {
+      "name": "False alarms",
+      "target": "<= 10%",
+      "value": "0.0%",
+      "met": true
+    },
+    {
+      "name": "Households reached or escalated",
+      "target": "100%",
+      "value": "100.0%",
+      "met": true
+    }
+  ],
+  "notes": [
+    "100 phone lines; every run uses the same fake city (seed 42) on a simulated clock.",
+    "Calls were scripted straight from each household's hidden truth (no simulated residents yet), so urgent-found and false-alarm numbers here say nothing about the voice agent. Only the calling-order comparison is meaningful.",
+    "Both runs replay the same calls and use the same triage; only the calling order differs.",
+    "Decisions: rules."
+  ]
+}

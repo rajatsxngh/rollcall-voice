@@ -22,6 +22,7 @@ The backend (`backend/`, FastAPI) and the dashboard (`dashboard/`) meet here. Wh
 | GET | `/approvals` | Actions waiting for the coordinator (below) | M8 |
 | POST | `/approvals/{action_id}/approve`, `/approvals/{action_id}/reject` | Decide one. Body optional: `{"by": "coordinator"}`. 404 unknown, 409 already decided. Returns the updated approval item | M8 |
 | GET | `/households/{id}` | Everything about one household for the detail panel (below). Never includes the hidden truth | M8 |
+| GET | `/results` | The latest evaluation (below), written by `scripts.run_eval`. 404 until one exists | M9 |
 | POST | `/sms/inbound` | Twilio's inbound-text webhook (form fields `From`, `Body`); replies "1", "2", "3" or free text | M8 |
 
 The engine (M3) runs every timer on the run's clock, and **event times follow that clock**: at 60×, an hour of response takes a minute, and the feed's timestamps show response time. Until M6, calls go through a scripted channel that answers from the hidden truth with no AI.
@@ -65,6 +66,48 @@ Status `style` values: `solid`, `pulse` (call in progress), `hollow` (no answer 
 - `warning_area` is `null` until an alert has started the run. Before that, `affected` is `false` for every household.
 - Phone numbers are never sent to the dashboard.
 - Load `/state`, then connect to `/ws?since=<last_event_id>`. On a dropped connection, reconnect with the last event id you saw.
+
+## GET /results
+
+Written by `uv run python -m scripts.run_eval` to `results/latest.json` (and `RESULTS.md`). Every number comes from our own runs.
+
+```json
+{
+  "generated_at": "2026-11-08T03:10:00.000Z",
+  "source": {"calls": "simulated", "simulated_households": 1365, "scripted_households": 0,
+             "triage": "nemotron", "lines": 100, "seed": 42, "spec_hash": "a1b2c3d4e5f6",
+             "voice_model": "...", "resident_model": "...", "tokens_per_household": 18400},
+  "runs": {
+    "risk_ranked": {
+      "affected": 1365, "calls": 1709, "coverage_pct": 100.0,
+      "true_urgent": 116, "true_urgent_helped": 116, "urgent_found": 112, "urgent_found_pct": 96.6,
+      "flagged_urgent": 120, "false_alarms": 8, "false_alarm_pct": 6.7,
+      "median_minutes_to_help": 3.2, "p90_minutes_to_help": 21.0, "minutes_until_all_urgent_helped": 52.3,
+      "avg_call_minutes": 1.8, "minutes_total": 54.1,
+      "curve": [[0, 0], [5, 41], [10, 70]]
+    },
+    "list_order": {"...": "same fields"}
+  },
+  "speedup": {"median": 4.4, "p90": 2.1, "all": 1.0},
+  "triage_compare": {"households": 1270, "nemotron": {"urgent_found_pct": 96.6, "false_alarm_pct": 6.7},
+                     "keywords": {"urgent_found_pct": 61.2, "false_alarm_pct": 18.0}},
+  "traps": [{"household_id": 812, "persona": "downplays", "true_urgency": "P2", "found_urgency": "P2",
+             "keyword_urgency": "P4", "passed": true, "rule": "flagged P1 or P2", "summary": "..."}],
+  "trap_case": {"household_id": 812, "name": "Dorothy Smith", "persona": "downplays",
+                "quote": "I'm fine, honey, the oxygen machine just keeps beeping",
+                "keyword_said": "P4 safe", "nemotron_said": "P2 urgent: oxygen on battery",
+                "transcript": [{"role": "agent", "line": "..."}, {"role": "resident", "line": "..."}]},
+  "latency": {"turns": 42, "p50_ms": 640, "p90_ms": 1110},
+  "targets": [{"name": "Urgent households found", "target": ">= 95%", "value": "96.6%", "met": true}],
+  "notes": ["The 2,000-household test is simulated: Nemotron plays the residents.", "100 phone lines."]
+}
+```
+
+- `true_urgent_helped`: truly urgent homes that got help at all (flagged or not); `urgent_found` counts only those flagged P1/P2.
+- `speedup`: list order ÷ RollCall, rounded to one decimal.
+- `curve`: `[minute, urgent homes with help on the way by then]`, both runs on the same minutes, for the over-time chart.
+- `triage_compare`, `traps`, `trap_case` are empty or `null` when the run used scripted calls (no transcripts to judge). `latency` is `null` until real calls have been logged.
+- Show `notes` with the numbers: the honesty rule.
 
 ## GET /approvals
 

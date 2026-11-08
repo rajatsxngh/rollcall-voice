@@ -333,9 +333,9 @@ Build:
 
 Done when:
 
-- [ ] One command rebuilds the results, and each number traces to a run file.
+- [x] One command rebuilds the results, and each number traces to a run file. *(`scripts.run_eval`: about 36 s; writes `results/latest.json`, a timestamped copy and `RESULTS.md`; run files in `data/runs/eval_*.db`.)*
 - [ ] The dashboard shows the 1:20 trap beat and the 1:35 results beat.
-- [ ] The PRD targets are met (95% or more urgent found, 10% or fewer false alarms, 100% coverage, ratio vs list order reported), or each miss is listed with what was tried.
+- [ ] The PRD targets are met (95% or more urgent found, 10% or fewer false alarms, 100% coverage, ratio vs list order reported), or each miss is listed with what was tried. *(Scripted calls so far: median 4.5x faster than list order, 100% coverage, 91.4% urgent found. The 10 misses are homes that never answered (in-person check, not flagged) or texted "2" (needs help, can't tell P2 from P3). Real numbers need M7's simulated calls: `scripts.sim_calls`, then `scripts.run_eval --nemotron`.)*
 - [ ] Feature freeze at Sun 9:00 am.
 
 ## M10: Demo hardening and submission

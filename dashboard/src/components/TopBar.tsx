@@ -4,10 +4,21 @@ import type { Theme } from '../lib/theme'
 import { usePersistentState } from '../lib/usePersistentState'
 import { transport, usingFixture, useRunSnapshot } from '../live'
 import type { AlertInfo, ConnState } from '../store/runStore'
+import type { View } from '../App'
 
 const SPEEDS = [1, 10, 30, 60]
 
-export function TopBar({ theme, onToggleTheme }: { theme: Theme; onToggleTheme: () => void }) {
+export function TopBar({
+  theme,
+  onToggleTheme,
+  view,
+  onView,
+}: {
+  theme: Theme
+  onToggleTheme: () => void
+  view: View
+  onView: (v: View) => void
+}) {
   const snap = useRunSnapshot()
   const [speed, setSpeed] = usePersistentState<number>('rc.speed', 10)
   const [busy, setBusy] = useState<null | 'alert' | 'reset'>(null)
@@ -37,6 +48,7 @@ export function TopBar({ theme, onToggleTheme }: { theme: Theme; onToggleTheme: 
     <header className="flex h-[68px] shrink-0 items-center gap-4 whitespace-nowrap border-b border-line bg-panel px-5 xl:gap-6">
       <Brand fixture={usingFixture} />
       <div className="h-8 w-px shrink-0 bg-line" />
+      <ViewSwitch value={view} onChange={onView} />
       <AlertStatus alert={snap.alert} active={active} runTime={snap.runTime} tz={tz} />
 
       <div className="ml-auto flex shrink-0 items-center gap-3">
@@ -46,25 +58,29 @@ export function TopBar({ theme, onToggleTheme }: { theme: Theme; onToggleTheme: 
           </span>
         )}
         {/* Speed is fixed once a run starts, so the picker steps aside while a warning is active. */}
-        {!active && <SpeedPicker value={speed} onChange={setSpeed} disabled={busy != null} />}
-        <button
-          type="button"
-          onClick={() => run('alert', () => transport.startDemo(speed))}
-          disabled={!snap.ready || active || busy != null}
-          className="flex h-10 items-center gap-2 rounded-lg bg-accent px-4 text-[14px] font-semibold text-accent-ink shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
-        >
-          <WarningIcon />
-          {busy === 'alert' ? 'Starting…' : active ? 'Warning active' : 'Tornado warning'}
-        </button>
-        <button
-          type="button"
-          onClick={() => run('reset', () => transport.reset())}
-          disabled={!snap.ready || busy != null}
-          className="flex h-10 items-center gap-2 rounded-lg border border-line bg-panel px-3.5 text-[14px] font-medium text-ink transition hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45"
-        >
-          <ResetIcon />
-          {busy === 'reset' ? 'Resetting…' : 'Reset'}
-        </button>
+        {view === 'live' && !active && <SpeedPicker value={speed} onChange={setSpeed} disabled={busy != null} />}
+        {view === 'live' && (
+          <>
+            <button
+              type="button"
+              onClick={() => run('alert', () => transport.startDemo(speed))}
+              disabled={!snap.ready || active || busy != null}
+              className="flex h-10 items-center gap-2 rounded-lg bg-accent px-4 text-[14px] font-semibold text-accent-ink shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <WarningIcon />
+              {busy === 'alert' ? 'Starting…' : active ? 'Warning active' : 'Tornado warning'}
+            </button>
+            <button
+              type="button"
+              onClick={() => run('reset', () => transport.reset())}
+              disabled={!snap.ready || busy != null}
+              className="flex h-10 items-center gap-2 rounded-lg border border-line bg-panel px-3.5 text-[14px] font-medium text-ink transition hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <ResetIcon />
+              {busy === 'reset' ? 'Resetting…' : 'Reset'}
+            </button>
+          </>
+        )}
         <div className="mx-1 h-8 w-px bg-line" />
         <Connection conn={snap.conn} error={snap.error} />
         <button
@@ -78,6 +94,33 @@ export function TopBar({ theme, onToggleTheme }: { theme: Theme; onToggleTheme: 
         </button>
       </div>
     </header>
+  )
+}
+
+const VIEWS: { id: View; label: string }[] = [
+  { id: 'live', label: 'Live' },
+  { id: 'results', label: 'Results' },
+]
+
+/** Live run vs the M9 results (test mode). */
+function ViewSwitch({ value, onChange }: { value: View; onChange: (v: View) => void }) {
+  return (
+    <div role="tablist" aria-label="View" className="flex h-10 shrink-0 items-center rounded-lg border border-line bg-bg p-1">
+      {VIEWS.map((v) => (
+        <button
+          key={v.id}
+          type="button"
+          role="tab"
+          aria-selected={v.id === value}
+          onClick={() => onChange(v.id)}
+          className={`h-full rounded-md px-3.5 text-[13.5px] font-semibold transition ${
+            v.id === value ? 'bg-raised text-ink shadow-sm' : 'text-muted hover:text-ink'
+          }`}
+        >
+          {v.label}
+        </button>
+      ))}
+    </div>
   )
 }
 

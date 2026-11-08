@@ -1,4 +1,4 @@
-import type { ApprovalItem, ApprovalsList, EventsPage, Health, HouseholdDetail, Meta, RunEvent, RunState } from './types'
+import type { ApprovalItem, ApprovalsList, EventsPage, Health, HouseholdDetail, Meta, Results, RunEvent, RunState } from './types'
 
 /** Where the backend runs. Set VITE_API_BASE (see .env.example); no trailing slash. */
 export const API_BASE = (
@@ -34,6 +34,9 @@ export interface Transport {
   /** 404 unknown, 409 already decided (both as ApiError). */
   decideApproval(actionId: number, approve: boolean): Promise<ApprovalItem>
   getHousehold(id: number): Promise<HouseholdDetail>
+  // M9
+  /** The latest evaluation; 404 (ApiError) until `scripts.run_eval` has written one. */
+  getResults(): Promise<Results>
 }
 
 export class ApiError extends Error {
@@ -79,6 +82,7 @@ export function httpTransport(base: string = API_BASE): Transport {
     decideApproval: (actionId, approve) =>
       request<ApprovalItem>('POST', `/approvals/${actionId}/${approve ? 'approve' : 'reject'}`, { by: 'coordinator' }),
     getHousehold: (id) => request<HouseholdDetail>('GET', `/households/${id}`),
+    getResults: () => request<Results>('GET', '/results'),
     openStream(since, handlers) {
       const ws = new WebSocket(`${base.replace(/^http/, 'ws')}/ws?since=${since}`)
       let done = false

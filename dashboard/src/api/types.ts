@@ -188,3 +188,96 @@ export interface HouseholdDetail extends Household {
   actions: HouseholdAction[]
   next_followup: FollowUp | null
 }
+
+// ---- M9: GET /results ----------------------------------------------------------------------
+
+export interface ResultsSource {
+  /** "simulated" (Nemotron plays the residents) or "scripted" (answers from the hidden truth). */
+  calls: string
+  simulated_households: number
+  scripted_households: number
+  /** "nemotron", "keywords", "rules", ... */
+  triage: string
+  lines: number
+  seed: number | null
+  spec_hash: string | null
+  // Sent by the backend, not (yet) in docs/API.md:
+  voice_model?: string | null
+  resident_model?: string | null
+  tokens_per_household?: number | null
+}
+
+/** One evaluation run (risk-ranked or list order). Minutes are run-clock minutes since the alert. */
+export interface ResultsRun {
+  affected: number
+  calls: number
+  coverage_pct: number
+  true_urgent: number
+  urgent_found: number
+  urgent_found_pct: number
+  /** True-urgent homes that got help on the way by any route (sent by the backend, not in docs/API.md). */
+  true_urgent_helped?: number
+  flagged_urgent: number
+  false_alarms: number
+  false_alarm_pct: number
+  median_minutes_to_help: number | null
+  p90_minutes_to_help: number | null
+  /** null when some true-urgent home never got help. */
+  minutes_until_all_urgent_helped: number | null
+  avg_call_minutes: number | null
+  minutes_total: number | null
+  /** [minute, urgent homes with help on the way by then]; both runs share the same minutes. */
+  curve: [number, number][]
+}
+
+export interface TriageScore {
+  urgent_found_pct: number
+  false_alarm_pct: number
+}
+
+export interface TriageCompare {
+  households: number
+  nemotron: TriageScore
+  keywords: TriageScore
+}
+
+export interface TrapResult {
+  household_id: number
+  persona: string
+  true_urgency: string | null
+  found_urgency: string | null
+  keyword_urgency: string | null
+  passed: boolean
+  rule: string
+  summary: string | null
+}
+
+export interface TrapCase {
+  household_id: number
+  name: string
+  persona: string
+  quote: string
+  keyword_said: string
+  nemotron_said: string
+  transcript: TranscriptLine[]
+}
+
+export interface ResultsTarget {
+  name: string
+  target: string
+  value: string
+  met: boolean
+}
+
+export interface Results {
+  generated_at: string
+  source: ResultsSource
+  runs: { risk_ranked: ResultsRun; list_order: ResultsRun }
+  speedup: { median: number | null; p90: number | null; all: number | null } | null
+  triage_compare: TriageCompare | null
+  traps: TrapResult[]
+  trap_case: TrapCase | null
+  latency: { turns: number; p50_ms: number; p90_ms: number } | null
+  targets: ResultsTarget[]
+  notes: string[]
+}
