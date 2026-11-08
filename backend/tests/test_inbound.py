@@ -19,3 +19,23 @@ def test_caller_number_finds_the_live_home_and_metadata_wins(tmp_path):
                          "assistantOverrides": {"metadata": {"household_id": 1}}}}
     assert resolve_household(db, outbound) == 1
     db.dispose()
+
+
+def test_assistant_request_fills_in_the_caller(settings, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    s = settings.model_copy(update={"vapi_assistant_id": "asst_123"})
+    app = create_app(s)
+    with TestClient(app) as client:
+        with app.state.db.session() as session:
+            session.add(Household(id=7, name="Maria Lopez", phone="+12145551234", address="1412 Oak St",
+                                  lat=32.9, lng=-96.7, age=81, live=True))
+            session.commit()
+        body = {"message": {"type": "assistant-request", "call": {"customer": {"number": "+12145551234"}}}}
+        reply = client.post("/vapi/webhook", json=body).json()
+        assert reply == {"assistantId": "asst_123", "assistantOverrides": {
+            "variableValues": {"name": "Maria"}, "metadata": {"household_id": 7}}}
+        stranger = {"message": {"type": "assistant-request", "call": {"customer": {"number": "+13125550000"}}}}
+        assert client.post("/vapi/webhook", json=stranger).json()["assistantOverrides"]["variableValues"]["name"] == "there"

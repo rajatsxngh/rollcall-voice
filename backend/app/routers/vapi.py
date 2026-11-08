@@ -499,6 +499,22 @@ def _call_tracker(state: Any) -> _CallTracker:
     return tracker
 
 
+def assistant_for_inbound(state: Any, message: dict[str, Any]) -> dict[str, Any]:
+    """Someone dialed the RollCall number (no assistant on the number): answer with our assistant,
+    filled in for the household that number belongs to. Vapi allows 7.5 s, so this stays a quick lookup."""
+    assistant_id = state.settings.vapi_assistant_id.strip()
+    if not assistant_id:
+        return {"error": "RollCall isn't set up to take calls right now. Please try again later."}
+    household_id = resolve_household(state.db, message)
+    household = voice_tools.find_household(state.db, household_id) if household_id is not None else None
+    name = household.name.split()[0] if household is not None else "there"
+    overrides: dict[str, Any] = {"variableValues": {"name": name}}
+    if household is not None:
+        overrides["metadata"] = {"household_id": household.id}
+    log.info("inbound call from household %s", household_id)
+    return {"assistantId": assistant_id, "assistantOverrides": overrides}
+
+
 @router.post("/webhook")
 def vapi_webhook(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     message = body.get("message")
@@ -509,6 +525,8 @@ def vapi_webhook(request: Request, body: dict[str, Any] = Body(...)) -> dict[str
     calls = _call_tracker(state)
     if kind == "tool-calls":
         return _answer_tool_calls(state, calls, message)
+    if kind == "assistant-request":
+        return assistant_for_inbound(state, message)
     if kind == "status-update":
         _status_update(state, calls, message)
     elif kind.startswith("transcript"):  # "transcript" or 'transcript[transcriptType="final"]'

@@ -130,6 +130,19 @@ def main() -> int:
     print(f"      custom LLM: {base}/vapi/chat/completions | webhook: {base}/vapi/webhook")
     if not assistant_id:
         print(f"      put this line in .env so call_me.py uses it and re-runs update it:\n\nVAPI_ASSISTANT_ID={new_id}\n")
+    if settings.vapi_phone_number_id:
+        # Inbound calls: no fixed assistant on the number, so Vapi asks our webhook (assistant-request),
+        # which answers with this assistant filled in for the caller's household.
+        phone = {"assistantId": None, "server": payload.get("server")}
+        try:
+            r = httpx.patch(f"{VAPI_API}/phone-number/{settings.vapi_phone_number_id}", json=phone,
+                            headers={"Authorization": f"Bearer {settings.vapi_api_key}"}, timeout=30)
+            if r.status_code < 400:
+                print("ok    phone number set to ask our webhook who answers inbound calls")
+            else:
+                print(f"WARN  could not set up inbound calls on the number: HTTP {r.status_code} {r.text[:300]}")
+        except httpx.HTTPError as exc:
+            print(f"WARN  could not set up inbound calls on the number: {exc}")
     return 0
 
 
