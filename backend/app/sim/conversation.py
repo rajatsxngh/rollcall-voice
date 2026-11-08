@@ -238,7 +238,9 @@ class _Conversation:
             "transfer_to_human": CallOutcome.TRANSFERRED,
         }.get(ended_by, CallOutcome.COMPLETED)
         found = most_severe([n.urgency for n in self.needs] + self.flags)
-        if found is None and outcome is CallOutcome.COMPLETED:
+        if found is None and ended_by == "turn_cap":
+            outcome = CallOutcome.FAILED  # learned nothing: not reached, so the follow-up ladder takes over
+        elif found is None and outcome is CallOutcome.COMPLETED:
             found = Urgency.P4
         first = self.h.name.split()[0]
         summary = self.summary or _fallback_summary(ended_by, first, self.needs)

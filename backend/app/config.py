@@ -25,9 +25,9 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_thinking_style: str = "reasoning"  # or: none
 
-    manager_model: str = "nvidia/nemotron-3-super-120b-a12b"
+    manager_model: str = "nvidia/nemotron-3.5-super-vl-120b-a12b"
     voice_model: str = "nvidia/nemotron-3.5-lightning-30b-a3b"
-    resident_model: str = "nvidia/nemotron-nano-3-30b-a3b"
+    resident_model: str = "nvidia/nemotron-3.5-lightning-30b-a3b"
     openrouter_manager_model: str = "nvidia/nemotron-3.5-super-vl:free"
     openrouter_voice_model: str = "nvidia/nemotron-3.5-lightning:free"
     openrouter_resident_model: str = "nvidia/nemotron-3.5-lightning:free"

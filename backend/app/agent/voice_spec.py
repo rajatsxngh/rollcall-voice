@@ -53,9 +53,16 @@ SAFETY_RULES: tuple[str, ...] = (
     " devices that need power and who is home with them.",
     "Catch downplaying: \"I'm fine, honey, my oxygen machine just keeps beeping\" is P2 or P1,"
     " not safe.",
-    "If you can't understand them, they don't speak English, or they seem confused, never treat"
-    " them as safe: record the need and transfer them to a person.",
-    "Only promise help that a tool result confirmed.",
+    "If they speak Spanish, talk with them in Spanish. If after two tries you still can't hear or"
+    " understand them, or they seem confused, never treat them as safe: tell them a person will"
+    " call them back, then call transfer_to_human.",
+    "Call record_need in the same turn you learn of a need, before you say anything more about it."
+    " Saying a need out loud does not save it, and they may hang up at any moment.",
+    "A medical device that has stopped because there is no power (CPAP, oxygen) is P1. One on"
+    " battery, medicine that needs a fridge with the power out, or an older person alone with no"
+    " power or cooling is P2.",
+    "Only promise help that a tool result confirmed. Never make up places, addresses, distances or"
+    " arrival times, such as a hospital or shelter by name.",
 )
 
 CLOSING_LINE = "Stay safe. Goodbye."  # Vapi hangs up when the agent says "goodbye"

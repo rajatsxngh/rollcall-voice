@@ -24,7 +24,7 @@ def no_retry_delay(monkeypatch):
 
 @pytest.fixture
 def settings(tmp_path):
-    return Settings(_env_file=None, data_dir=tmp_path, nvidia_api_keys="nv-test", nvidia_api_key="",
+    return Settings(_env_file=None, data_dir=tmp_path, nvidia_api_keys="nv-test", resident_model="test/resident-model", nvidia_api_key="",
                     openrouter_api_key="")
 
 
@@ -250,7 +250,7 @@ async def test_turn_cap_ends_a_runaway_call(settings):
     llm, fake = make_llm(settings, lambda b, t: f"Question number {t}?", lambda b, t: "Hmm, what?")
     run = await simulate_call(llm, household(), truth(persona=Persona.CONFUSED), max_agent_turns=4)
     await llm.aclose()
-    assert run.ended_by == "turn_cap" and run.result.outcome is CallOutcome.COMPLETED
+    assert run.ended_by == "turn_cap" and run.result.outcome is CallOutcome.FAILED and run.result.urgency is None  # learned nothing: not reached
     assert fake.count("voice") == 4 and fake.count("resident") == 4
     assert sum(t["role"] == "agent" for t in run.result.transcript) == 5  # opening + 4
     assert "turn limit" in run.result.summary
