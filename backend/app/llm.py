@@ -524,7 +524,9 @@ class ChatStream:
         """Try one provider, with one retry. Returns None once the first chunk arrives."""
         client = self._client
         problem = "no attempt made"
-        for attempt in range(2):
+        limited = 0  # rate-limit replies seen; they get one extra quick try (per-minute limits clear fast)
+        attempt = 0
+        while attempt < 2 + min(limited, 1):
             key = p.key()
             retry = True
             resp: httpx.Response | None = None
@@ -550,6 +552,7 @@ class ChatStream:
                 problem = f"HTTP {resp.status_code}: {text[:200]}"
                 if resp.status_code == 429:
                     p.cool(key, _retry_after(resp))
+                    limited += 1
                 retry = resp.status_code in RETRYABLE_STATUS
             except _StreamError as exc:
                 problem, retry = f"error in stream: {exc}", False
@@ -564,7 +567,8 @@ class ChatStream:
             client._sem[p.name].release()
             if not retry:
                 break
-            if attempt == 0:
+            attempt += 1
+            if attempt < 2 + min(limited, 1):
                 await asyncio.sleep(RETRY_DELAY_S)
         return problem
 

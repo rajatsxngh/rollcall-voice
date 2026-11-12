@@ -28,7 +28,7 @@ from app.config import Settings, get_settings
 
 VAPI_API = "https://api.vapi.ai"
 ASSISTANT_NAME = "RollCall Voice"
-SERVER_MESSAGES = ["tool-calls", "status-update", 'transcript[transcriptType="final"]', "end-of-call-report"]
+SERVER_MESSAGES = ["tool-calls", "status-update", "transcript", "end-of-call-report"]  # the webhook keeps only final lines
 END_CALL_PHRASES = ["goodbye"]  # the spec's closing line ends with "Goodbye."
 EXAMPLE_BASE_URL = "https://YOUR-TUNNEL.example.com"
 

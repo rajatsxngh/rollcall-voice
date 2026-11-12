@@ -378,7 +378,7 @@ def test_server_messages_become_call_events(client):
         {"type": "status-update", "status": "in-progress"},  # already announced
         {"type": "transcript", "role": "assistant", "transcriptType": "final", "transcript": "Are you safe right now?"},
         {"type": "transcript", "role": "user", "transcriptType": "partial", "transcript": "Yes I"},
-        {"type": 'transcript[transcriptType="final"]', "role": "user", "transcriptType": "final", "transcript": "Yes, I'm safe."},
+        {"type": "transcript", "role": "user", "transcriptType": "final", "transcript": "Yes, I'm safe."},
         {"type": "tool-calls", "toolCallList": [
             {"id": "tc1", "type": "function", "function": {"name": "end_call", "arguments": {"summary": "Maria is safe."}}}
         ]},
@@ -443,7 +443,7 @@ def test_assistant_payload(settings):
     assert payload["firstMessage"] == voice_spec.FIRST_MESSAGE
     assert payload["server"]["url"] == "https://rollcall.example.com/vapi/webhook"
     assert payload["serverMessages"] == [
-        "tool-calls", "status-update", 'transcript[transcriptType="final"]', "end-of-call-report"
+        "tool-calls", "status-update", "transcript", "end-of-call-report"
     ]
     assert payload["maxDurationSeconds"] == 180
     assert payload["voice"] == {"provider": "vapi", "voiceId": "Elliot"}
