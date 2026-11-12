@@ -13,6 +13,7 @@ What it sets up (docs: https://docs.vapi.ai/api-reference/assistants/create):
 - the voice spec's system prompt, first message and five tools; tool calls go to /vapi/webhook.
 - server: /vapi/webhook gets tool-calls, status-update, final transcripts and end-of-call-report.
 - a voice and transcriber from .env, a 3-minute cap, and a hang-up when the agent says "goodbye".
+- voicemail detection: on a machine it leaves a short message and hangs up (a no-answer to retry).
 """
 from __future__ import annotations
 
@@ -31,6 +32,12 @@ ASSISTANT_NAME = "RollCall Voice"
 SERVER_MESSAGES = ["tool-calls", "status-update", "transcript", "end-of-call-report"]  # the webhook keeps only final lines
 END_CALL_PHRASES = ["goodbye"]  # the spec's closing line ends with "Goodbye."
 EXAMPLE_BASE_URL = "https://YOUR-TUNNEL.example.com"
+# Left on an answering machine, then the call ends; the webhook counts it as a no-answer to retry.
+VOICEMAIL_MESSAGE = (
+    "Hi, this is RollCall, an automated assistant calling for State Farm about the tornado warning"
+    " near you. We're checking that you're safe and will try you again soon. If you need help now,"
+    " call 911."
+)
 
 
 def build_assistant(settings: Settings, base_url: str) -> dict[str, Any]:
@@ -75,6 +82,13 @@ def build_assistant(settings: Settings, base_url: str) -> dict[str, Any]:
         "maxDurationSeconds": settings.vapi_max_call_s,
         "endCallPhrases": list(END_CALL_PHRASES),
         "backgroundSound": "off",
+        "voicemailDetection": {  # https://docs.vapi.ai/calls/voicemail-detection
+            "provider": "vapi",
+            "type": "audio",
+            "backoffPlan": {"startAtSeconds": 2, "frequencySeconds": 2.5, "maxRetries": 5},
+            "beepMaxAwaitSeconds": 20,
+        },
+        "voicemailMessage": VOICEMAIL_MESSAGE,
         "metadata": {"app": "rollcall", "voice_spec": f"{voice_spec.VERSION}-{voice_spec.SPEC_HASH}"},
     }
 

@@ -40,7 +40,7 @@ from app.agent import voice_spec, voice_tools
 from app.db import Database
 from app.events import EventType
 from app.llm import LLMClient, LLMError, LLMResult, record_usage
-from app.models import CallOutcome, Channel
+from app.models import CallOutcome, Channel, Urgency
 
 log = logging.getLogger(__name__)
 
@@ -455,6 +455,9 @@ class _CallTracker:
         self._started: OrderedDict[str, None] = OrderedDict()
         self._summaries: OrderedDict[str, str] = OrderedDict()
         self._results: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._facts: OrderedDict[str, list[str]] = OrderedDict()  # what the tools recorded, per call
+        self._voicemail: OrderedDict[str, None] = OrderedDict()  # calls where a voicemail greeting was heard
+        self._needs: OrderedDict[str, None] = OrderedDict()  # calls where a need was recorded
 
     def first_start(self, call_id: str) -> bool:
         with self.lock:
@@ -470,6 +473,28 @@ class _CallTracker:
     def take_summary(self, call_id: str) -> str | None:
         with self.lock:
             return self._summaries.pop(call_id, None)
+
+    def add_fact(self, call_id: str, fact: str, need: bool = False) -> None:
+        with self.lock:
+            facts = self._facts.get(call_id) or []
+            if fact not in facts:
+                facts.append(fact)
+            self._keep(self._facts, call_id, facts)
+            if need:
+                self._keep(self._needs, call_id, None)
+
+    def take_facts(self, call_id: str) -> tuple[list[str], bool]:
+        """The call's recorded facts, and whether any of them was a need."""
+        with self.lock:
+            return self._facts.pop(call_id, []), self._needs.pop(call_id, "x") is None
+
+    def mark_voicemail(self, call_id: str) -> None:
+        with self.lock:
+            self._keep(self._voicemail, call_id, None)
+
+    def take_voicemail(self, call_id: str) -> bool:
+        with self.lock:
+            return self._voicemail.pop(call_id, "x") is None
 
     def result_for(self, tool_call_id: str) -> dict[str, Any] | None:
         with self.lock:
@@ -530,7 +555,7 @@ def vapi_webhook(request: Request, body: dict[str, Any] = Body(...)) -> dict[str
     if kind == "status-update":
         _status_update(state, calls, message)
     elif kind.startswith("transcript"):  # "transcript" or 'transcript[transcriptType="final"]'
-        _transcript(state, message)
+        _transcript(state, calls, message)
     elif kind == "end-of-call-report":
         _end_of_call(state, calls, message)
     else:
@@ -585,12 +610,52 @@ def _run_tool(
         log.exception("tool %s failed", name)
         entry["error"] = f"The {name} tool failed. Carry on without it."
     else:
+        args = voice_tools.parse_arguments(arguments)
         if name == "end_call" and ctx.call_id:
-            summary = voice_tools.parse_arguments(arguments).get("summary")
+            summary = args.get("summary")
             if summary:
                 calls.save_summary(ctx.call_id, str(summary))
+        elif ctx.call_id:
+            fact = _fact(name, args)
+            if fact:
+                calls.add_fact(ctx.call_id, fact, need=name == "record_need")
     log.info("tool %s (call %s): %s", name, ctx.call_id or "-", entry.get("result") or entry.get("error"))
     return entry
+
+
+def _fact(name: str, args: dict[str, Any]) -> str | None:
+    """One tool call as a few words for the call summary, when the agent never wrote one."""
+    if name == "record_need":
+        urgency = voice_tools.parse_urgency(args.get("urgency"))
+        details = " ".join(str(args.get("details") or "").split()).rstrip(" .") or "a need"
+        return f"{details} ({urgency.value})"
+    if name == "flag_urgent":
+        level = voice_tools.parse_urgency(args.get("level"), default=Urgency.P2)
+        return f"flagged {level.value}"
+    if name == "transfer_to_human":
+        return "asked for a person; told a person will call back"
+    return None
+
+
+def _built_summary(facts: list[str]) -> str:
+    """A one-line summary from what the tools recorded, for calls that ended without end_call."""
+    if not facts:
+        return ""
+    return "Ended without the agent's summary. Recorded: " + "; ".join(facts) + "."
+
+
+# Phrases from carrier and phone voicemail greetings. Heard from the "resident", they mean no
+# person picked up: the call is a no-answer to retry, not a finished check-in.
+_VOICEMAIL_PHRASES = (
+    "record your message", "leave a message", "leave your message", "after the tone", "after the beep",
+    "at the tone", "voicemail", "voice mail", "mailbox", "is not available", "isn't available",
+    "cannot take your call", "can't take your call", "please leave",
+)
+
+
+def is_voicemail_greeting(line: str) -> bool:
+    text = line.lower().replace("’", "'")
+    return any(phrase in text for phrase in _VOICEMAIL_PHRASES)
 
 
 def _known_household(state: Any, message: dict[str, Any]) -> int | None:
@@ -613,12 +678,15 @@ def _status_update(state: Any, calls: _CallTracker, message: dict[str, Any]) -> 
     log.info("Vapi call %s: %s%s", call_id or "-", status or "unknown status", f" ({reason})" if reason else "")
 
 
-def _transcript(state: Any, message: dict[str, Any]) -> None:
+def _transcript(state: Any, calls: _CallTracker, message: dict[str, Any]) -> None:
     if message.get("transcriptType", "final") != "final":
         return  # partial transcripts are skipped; the final line follows
     line = " ".join(str(message.get("transcript") or "").split())
     if not line:
         return
+    call_id = _call_id(message)
+    if call_id and message.get("role") != "assistant" and is_voicemail_greeting(line):
+        calls.mark_voicemail(call_id)
     state.bus.emit(
         EventType.CALL_TRANSCRIPT,
         {
@@ -634,10 +702,24 @@ def _end_of_call(state: Any, calls: _CallTracker, message: dict[str, Any]) -> No
     call_id = _call_id(message)
     reason = str(message.get("endedReason") or _dict(message.get("call")).get("endedReason") or "")
     agent_summary = calls.take_summary(call_id) if call_id else None
+    facts, recorded_need = calls.take_facts(call_id) if call_id else ([], False)
+    heard_voicemail = calls.take_voicemail(call_id) if call_id else False
+    outcome = _outcome(reason, agent_finished=agent_summary is not None)
+    summary = (
+        agent_summary
+        or str(_dict(message.get("analysis")).get("summary") or "")
+        or _built_summary(facts)
+    )
+    if outcome is CallOutcome.NO_ANSWER and reason == "voicemail":
+        summary = "Reached voicemail; left a short message. No one was checked on yet."
+    elif heard_voicemail and not recorded_need and outcome is not CallOutcome.FAILED:
+        # The agent talked to a voicemail greeting. Nobody was reached, so retry later.
+        outcome = CallOutcome.NO_ANSWER
+        summary = "Reached voicemail; no one was checked on yet."
     payload: dict[str, Any] = {
         "call_id": call_id,
-        "outcome": _outcome(reason, agent_finished=agent_summary is not None),
-        "summary": agent_summary or str(_dict(message.get("analysis")).get("summary") or ""),
+        "outcome": outcome,
+        "summary": summary,
         "ended_reason": reason,
     }
     seconds = _duration_s(message)

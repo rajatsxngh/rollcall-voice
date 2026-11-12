@@ -502,3 +502,71 @@ def test_dry_runs_print_requests_without_calling_vapi(settings, monkeypatch, cap
     assert body["customer"]["number"] == "+12145551234"
     assert body["assistantOverrides"]["metadata"]["household_id"] == 3
     assert "POST https://api.vapi.ai/call" in out.err
+
+
+# --- Voicemail and missing summaries ------------------------------------------------------------
+
+
+def _send(client, call_id, *messages):
+    for message in messages:
+        assert client.post("/vapi/webhook", json={"message": {"call": {"id": call_id}, **message}}).status_code == 200
+
+
+def test_talking_to_a_voicemail_greeting_is_a_no_answer(client):
+    _send(
+        client, "vm-1",
+        {"type": "transcript", "role": "user", "transcriptType": "final",
+         "transcript": "Nothing has been recorded. Record your message after the tone."},
+        {"type": "tool-calls", "toolCallList": [
+            {"id": "t1", "type": "function", "function": {"name": "end_call", "arguments": {"summary": "Not reached."}}}
+        ]},
+        {"type": "end-of-call-report", "endedReason": "assistant-said-end-call-phrase"},
+    )
+    [ended] = events_of(client, "call.ended")
+    assert ended["payload"]["outcome"] == "no_answer"
+    assert ended["payload"]["summary"] == "Reached voicemail; no one was checked on yet."
+
+
+def test_vapi_voicemail_detection_is_a_no_answer(client):
+    _send(client, "vm-2", {"type": "end-of-call-report", "endedReason": "voicemail"})
+    [ended] = events_of(client, "call.ended")
+    assert ended["payload"]["outcome"] == "no_answer"
+    assert "voicemail" in ended["payload"]["summary"].lower()
+
+
+def test_a_person_who_mentions_voicemail_is_still_checked_on(client):
+    _send(
+        client, "vm-3",
+        {"type": "transcript", "role": "user", "transcriptType": "final", "transcript": "Sorry, I thought you were my voicemail."},
+        {"type": "tool-calls", "toolCallList": [
+            {"id": "t2", "type": "function", "function": {"name": "record_need", "arguments":
+                {"category": "medical", "details": "oxygen on battery", "urgency": "P2"}}}
+        ]},
+        {"type": "end-of-call-report", "endedReason": "assistant-said-end-call-phrase"},
+    )
+    [ended] = events_of(client, "call.ended")
+    assert ended["payload"]["outcome"] == "completed"
+
+
+def test_a_call_without_end_call_gets_a_summary_from_its_tools(client):
+    _send(
+        client, "sum-1",
+        {"type": "tool-calls", "toolCallList": [
+            {"id": "s1", "type": "function", "function": {"name": "record_need", "arguments":
+                {"category": "medical", "details": "oxygen machine stopped, lives alone", "urgency": "P1"}}},
+            {"id": "s2", "type": "function", "function": {"name": "flag_urgent", "arguments": {"level": "P1", "reason": "oxygen"}}},
+            {"id": "s3", "type": "function", "function": {"name": "transfer_to_human", "arguments": {"reason": "oxygen"}}},
+        ]},
+        {"type": "end-of-call-report", "endedReason": "assistant-said-end-call-phrase", "analysis": {}},
+    )
+    [ended] = events_of(client, "call.ended")
+    assert ended["payload"]["summary"] == (
+        "Ended without the agent's summary. Recorded: oxygen machine stopped, lives alone (P1); flagged P1;"
+        " asked for a person; told a person will call back."
+    )
+
+
+def test_assistant_leaves_a_voicemail_and_hangs_up(settings):
+    payload = vapi_setup.build_assistant(settings, "https://x.example.com")
+    assert payload["voicemailDetection"]["provider"] == "vapi"
+    assert "911" in payload["voicemailMessage"]
